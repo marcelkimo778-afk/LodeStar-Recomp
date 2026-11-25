@@ -11,6 +11,13 @@ LodeStar contains or uses the following open-source work. Each copied file keeps
 | Dear ImGui | https://github.com/ocornut/imgui, Copyright (c) 2014-2025 Omar Cornut | MIT (`System/Engine/Runtime/third_party/imgui/LICENSE.txt`) | in-game menu and overlays |
 | libopus (`libopus-0.dll`, unmodified) | https://opus-codec.org, Copyright (c) Xiph.Org and contributors | BSD-3-Clause (`System/Engine/Runtime/third_party/opus/COPYING`) | music and voices (nn::codec Opus decoder) |
 
+Ideas and documentation (no code copied; LodeStar's code for these is its own):
+
+| Source | License | What was used |
+|---|---|---|
+| nxaevora (`docs/arceus-timing.md` and notes) | GPL-3.0 | research notes on which game sites need a frame-rate fix and the physics-step guard; facts and addresses only, the hooks in `System/Engine/Runtime/src/sw_hooks.c` are written independently (checked: no shared code lines beyond generic one-liners) |
+| switchbrew wiki | community documentation | Switch service and command layouts (e.g. the hardware Opus decoder in `sw_ipc.c`) |
+
 Not included, used from your PC at run time or build time:
 
 | Component | License | Purpose |

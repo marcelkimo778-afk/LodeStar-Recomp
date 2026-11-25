@@ -1362,8 +1362,12 @@ class LauncherApp:
         tk.Label(titles, text="Static recompiler  ·  native PC build of your own game dump", font=ui.F(10), bg=c["bg"],
                  fg=c["muted"]).pack(anchor="w")
         self.status_var = tk.StringVar(value="Ready")
-        self.status_lbl = ui.StatusPill(top, bg=c["bg"])
-        self.status_lbl.pack(side="right", anchor="n", pady=(6, 0))
+        status_col = tk.Frame(top, bg=c["bg"])                 # the status pill, and Uninstall (red) right under it
+        status_col.pack(side="right", anchor="n", pady=(6, 0))
+        self.status_lbl = ui.StatusPill(status_col, bg=c["bg"])
+        self.status_lbl.pack(anchor="e")
+        ui.PillButton(status_col, "Uninstall", lambda: self.on_uninstall(self.root), kind="dangerFill", size="sm",
+                      bg=c["bg"]).pack(anchor="e", pady=(P["xs"], 0))
         self.status_lbl.set("Ready", "good")
         dark = self.settings.get("theme") == "Dark"
         # right to left: status pill, settings (gear), light / dark switch
@@ -1962,6 +1966,10 @@ class LauncherApp:
         ttk.Button(r, text="Open logs folder",
                    command=lambda: self._open((self.out_dir / "logs").resolve())).pack(side="left")
         ttk.Button(r, text="Reset to defaults", command=lambda: reset()).pack(side="left", padx=6)
+        ttk.Label(l, text="Uninstall removes LodeStar's whole folder: the launcher, the game you built, your game files, "
+                          "mods and settings. It asks first whether to keep a copy of your saves (Documents\\LodeStar "
+                          "saves).", style="Muted.TLabel", wraplength=420, justify="left").pack(anchor="w", pady=(18, 0))
+        ttk.Button(l, text="Uninstall LodeStar...", command=lambda: self.on_uninstall(win)).pack(anchor="w", pady=(6, 0))
 
         def reset():
             if not messagebox.askyesno("Reset", "Reset every option to its default?", parent=win):
@@ -1992,7 +2000,10 @@ class LauncherApp:
             if theme != old_theme:
                 self.root.after(80, lambda: self.switch_theme(theme))
 
-        ttk.Button(outer, text="Done", style="Big.TButton", command=close).pack(anchor="e", pady=(12, 0))
+        foot = ttk.Frame(outer, style="Card.TFrame")           # always visible, whatever tab is open
+        foot.pack(fill="x", pady=(12, 0))
+        ttk.Button(foot, text="Done", style="Big.TButton", command=close).pack(side="right")
+        ttk.Button(foot, text="Uninstall LodeStar...", command=lambda: self.on_uninstall(win)).pack(side="left")
         win.protocol("WM_DELETE_WINDOW", close)
         win.bind("<Escape>", lambda _e: close())
         win.update_idletasks()
@@ -3000,6 +3011,30 @@ class LauncherApp:
         for line in "".join(traceback.format_exception(exc_type, exc, tb)).splitlines():
             self.log(line, "error")
         self.set_status("Launcher error (see log)", "error")
+
+    def on_uninstall(self, parent=None) -> None:
+        """Start the installer's uninstaller (unins000.exe in the install folder; it removes the whole folder after
+        asking about the saves) and close the launcher so its files are free.  A copy that was not installed with
+        LodeStar-Setup.exe (a clone, the portable zip) has no uninstaller: deleting its folder removes it."""
+        unins = sorted(self.root_dir.glob("unins*.exe"))
+        if not unins:
+            messagebox.showinfo("Uninstall", "This copy of LodeStar was not installed with the installer, so there is "
+                                f"nothing to uninstall: delete the folder\n\n{self.root_dir}\n\nto remove it (keep a copy "
+                                "of System\\build_work\\out\\save first if you want your saves).", parent=parent)
+            return
+        if self.task:
+            messagebox.showerror("Uninstall", f"'{self.task.name}' is running. Stop it first.", parent=parent)
+            return
+        if not messagebox.askyesno("Uninstall LodeStar", "Uninstall LodeStar? The uninstaller asks about your saves "
+                                   "next, then removes the whole folder.", parent=parent):
+            return
+        self._store_settings()
+        try:
+            subprocess.Popen([str(unins[-1])], cwd=str(self.root_dir.parent))
+        except OSError as e:
+            messagebox.showerror("Uninstall", f"The uninstaller could not start: {e}", parent=parent)
+            return
+        self.root.destroy()
 
     def on_close(self) -> None:
         if self.task and not messagebox.askyesno("Quit", f"'{self.task.name}' is running. Stop it and quit?"):

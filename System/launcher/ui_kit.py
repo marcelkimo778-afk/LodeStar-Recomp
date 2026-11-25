@@ -169,6 +169,7 @@ class PillButton(tk.Canvas):
         "secondary": ("parchment", "track", "ink"),
         "ghost": (None, "parchment", "primary"),
         "danger": ("dangerSoft", "dangerHover", "dangerText"),
+        "dangerFill": ("danger", "dangerText", "onPrimary"),   # filled red, white text (Uninstall)
     }
 
     def __init__(self, parent, text: str, command=None, kind: str = "secondary", bg: str | None = None,
