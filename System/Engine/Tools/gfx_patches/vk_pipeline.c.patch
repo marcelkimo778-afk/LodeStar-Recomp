@@ -1,0 +1,17 @@
+--- generated/vk/vk_pipeline.c
++++ arceus/vk/vk_pipeline.c
+@@ -1914,8 +1914,12 @@ static void rec_fill(KeyRec *r, const VkPipeState *s) {
+ 
+ // A pipeline was built for a draw: queue its record for the file. Caller holds P.lock.
+ static int keys_rec_on(void) {   // [arceus] independent of async pipelines
+-    const char *e = cfg_get("TOTK_PIPE_KEYS");
+-    return !(e && !strcmp(e, "0"));
++    static int on = -1;            // [arceus] read once (two getenv calls per pipeline build otherwise)
++    if (on < 0) {
++        const char *e = cfg_get("TOTK_PIPE_KEYS");
++        on = !(e && !strcmp(e, "0"));
++    }
++    return on;
+ }
+ static void keys_note(const VkPipeState *s) {
+     if (!keys_rec_on() || !K.path[0]) return;

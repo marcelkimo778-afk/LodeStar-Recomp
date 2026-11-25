@@ -1,0 +1,382 @@
+--- generated/vk/vk_exec_draw.c
++++ arceus/vk/vk_exec_draw.c
+@@ -2194,8 +2194,11 @@
+ }
+ 
+ // Pass, shaders, pipeline, fixed state and resources for a draw. 0: the draw is skipped.
+-static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
+-    if (ex->render_disabled) return 0;
++static int pd_why;
++unsigned oq_dn, oq_dskip; char oq_last[512];   // [arceus] SW_OQ_LOG (vk_exec_xfer.c prints them)
++static int prepare_draw_impl(VkExec *ex, int prim, int32_t count, int restart) {
++    pd_why = 0;
++    if (ex->render_disabled) return pd_why = 1, 0;
+     cb_res(ex);
+     dummies_init();
+     if (ex->pass_noatt) {   // no attachment: the pass covers this draw's viewport or scissor, reopened when it needs more
+@@ -2207,7 +2210,7 @@
+     if (!ex->in_pass) ex->dirty |= VK_EXEC_DIRTY_VIEWPORT | VK_EXEC_DIRTY_SCISSOR;
+     vk_exec_pass_begin(ex);
+     VkRect2D sc = vk_exec_scissor(ex);
+-    if (!sc.extent.width || !sc.extent.height) return 0;
++    if (!sc.extent.width || !sc.extent.height) return pd_why = 2, 0;
+     if (!ex->prog) return warn_once(W_PROGRAM, "a draw without a bound program is skipped"), 0;
+     int has_vs, has_fs, vs_wait = 0, fs_wait = 0, memo = shader_memo_on();
+     const GfxShader *vs, *fs;
+@@ -2233,13 +2236,13 @@
+     // session. A draw into per-frame targets is skipped until they are ready and comes back next frame.
+     int oneshot = -1, skip = pipe_skip_mode();   // -1: not looked up
+     if (vs_wait || fs_wait) {
+-        if (!(oneshot = !vk_exec_targets_recent(ex, skip >= 1))) return perf_count(PERF_CNT_SHADER_SKIP), 0;   // skipped until ready
++        if (!(oneshot = !vk_exec_targets_recent(ex, skip >= 1))) return pd_why = 4, perf_count(PERF_CNT_SHADER_SKIP), 0;   // skipped until ready
+         perf_count(PERF_CNT_ONESHOT_WAIT);
+         if (vs_wait) vs = shader_for(ex, NVN_STAGE_VS, &has_vs, NULL, 1);
+         if (fs_wait) fs = shader_for(ex, NVN_STAGE_FS, &has_fs, NULL, 1);
+     }
+-    if (!vs || (has_fs && !fs)) return 0;
+-    if (vk_dlaa_skip_draw(ex, fs)) return 0;   // the game's FXAA off, or its scaling replaced by DLSS (vk_dlaa.c)
++    if (!vs || (has_fs && !fs)) return pd_why = 5, 0;
++    if (vk_dlaa_skip_draw(ex, fs)) return pd_why = 6, 0;   // the game's FXAA off, or its scaling replaced by DLSS (vk_dlaa.c)
+     uint32_t fbl = feedback_prepare(ex, fs);
+     VkPipeState s = ex->pipe;
+     s.vs = vs, s.fs = fs;
+@@ -2302,7 +2305,7 @@
+                (unsigned long long)__atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED) + 1, waited / 1e6, why,
+                pending ? ", skipped after all" : "", count, ex->pass_w, ex->pass_h, tg);
+     }
+-    if (pending) return 0;   // a background worker is building it: the draw is skipped until it is ready
++    if (pending) return pd_why = 7, 0;   // a background worker is building it: the draw is skipped until it is ready
+     if (!p || !info) return warn_once(W_PIPELINE, "a graphics pipeline could not be created: draws with it are skipped"), 0;
+     bind_pipeline(ex, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+     if (!B.st_valid || memcmp(&B.st, &s, sizeof s)) {
+@@ -2312,8 +2315,8 @@
+         if (ex->mark && vk_exec_frame.draws == ex->mark_draws0) ex->mark->first[0] = vs, ex->mark->first[1] = fs;
+     }
+     vk_dlaa_draw(ex);
+-    if (skip_vs(s.vs)) return 0;   // [arceus] SW_SKIP_VS debugging
+-    if (skip_t0(ex, &s)) return 0;   // [arceus] SW_SKIP_T0 debugging
++    if (skip_vs(s.vs)) return pd_why = 9, 0;   // [arceus] SW_SKIP_VS debugging
++    if (skip_t0(ex, &s)) return pd_why = 9, 0;   // [arceus] SW_SKIP_T0 debugging
+     vk_mvsurvey_draw(ex);
+     vk_mvprev_draw(ex);
+     record_fixed(ex);
+@@ -2326,6 +2329,51 @@
+     if (vk_hdr_track) vk_hdr_draw(ex, info);
+     vk_exec_oq_draw(ex);
+     return 1;
++}
++
++
++// [arceus] SW_OQ_LOG=1: draws made while a samples-passed query counts (NPC talk / wild Pokemon sight debugging):
++// why one is skipped (pd_why: 1 render disabled, 2 empty scissor, 4 shader not ready, 5 no shader, 6 DLAA skip,
++// 7 pipeline being built, 9 SW_SKIP_*; 0 other) and the state of the first counted ones.
++static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
++    int counting = vk_exec_oq_counting();
++    static int exp = -1;   // SW_OQ_EXP=1: no culling, =2: no depth test, for draws inside a query (experiment)
++    if (exp < 0) { const char *e = getenv("SW_OQ_EXP"); exp = e ? atoi(e) : 0; }
++    VkPipeState keep = ex->pipe;
++    if (counting && exp == 1) ex->pipe.poly.cull = 0;
++    if (counting && exp == 2) ex->pipe.ds.dt = 0;
++    int r = prepare_draw_impl(ex, prim, count, restart);
++    if (counting && exp) ex->pipe = keep;
++    if (!vk_exec_oq_log_on()) return r;
++    static int nlog, nskip;
++    if (vk_exec_oq_window()) {   // [arceus] SW_OQ_LOG: draws between query events, the last one described
++        const VkPipeState *s = &ex->pipe;
++        if (r) oq_dn++; else oq_dskip++;
++        snprintf(oq_last, sizeof oq_last, "%s (why %d): %d vertices, pass %ux%u, depth target %ux%u nvn %#x, test %d write %d "
++                 "func %d, stencil %d func %d ref %u, colour fmt %d mask %#x, fs %p, cull %d, vp %gx%g",
++                 r ? "RECORDED" : "SKIPPED", r ? 0 : pd_why, count, ex->pass_w, ex->pass_h, ex->depth.width, ex->depth.height,
++                 ex->depth.nvn_format, (int)s->ds.dt, (int)s->ds.dw, (int)s->ds.df, (int)s->ds.st, (int)s->ds.sf_f,
++                 ex->st_ref[0], s->color_fmt[0], s->chmask.mask, (void *)s->fs, (int)s->poly.cull, ex->vp[0][2], ex->vp[0][3]);
++        return r;
++    }
++    if (!counting) return r;
++    if (!r) {
++        if (nskip++ < 0) rt_log("[oq] draw skipped while counting: reason %d, %d vertices, pass %ux%u", pd_why, count, ex->pass_w, ex->pass_h);
++        return r;
++    }
++    if (nlog++ < 0) {
++        const VkPipeState *s = &ex->pipe;
++        VkRect2D sc = vk_exec_scissor(ex);
++        rt_log("[oq] counted draw: prim %d, %d vertices, pass %ux%u, scissor %d,%d %ux%u, depth fmt %d test %d write %d func %d, "
++               "stencil %d, colour fmt %d mask %#x, raster discard %d, cull %d, depth range %g..%g, minus_w %d, fs %p",
++               prim, count, ex->pass_w, ex->pass_h, sc.offset.x, sc.offset.y, sc.extent.width, sc.extent.height,
++               s->depth_fmt, (int)s->ds.dt, (int)s->ds.dw, (int)s->ds.df, (int)s->ds.st, s->color_fmt[0], s->chmask.mask,
++               s->raster_discard, (int)s->poly.cull, ex->depth_range[0], ex->depth_range[1], (int)nvn_depth_minus_w(), (void *)s->fs);
++        rt_log("[oq]   viewport %d: %g,%g %gx%g depth %g..%g; depth target %p %ux%u nvn %#x layers %u",
++               ex->has_vp, ex->vp[0][0], ex->vp[0][1], ex->vp[0][2], ex->vp[0][3], ex->vp[0][4], ex->vp[0][5],
++               (void *)ex->depth.image, ex->depth.width, ex->depth.height, ex->depth.nvn_format, ex->depth.layers);
++    }
++    return r;
+ }
+ 
+ // ---- per-object motion
+@@ -541,12 +541,23 @@ static VkImageView get_view(VkExec *ex, const VkTexImage *img, const view_t *v,
+             }
+     }
+     uint32_t swz = (uint32_t)sw[0] | (uint32_t)sw[1] << 8 | (uint32_t)sw[2] << 16 | (uint32_t)sw[3] << 24;
+-    ViewKey k = {img->image, img->format, vt, aspect, l0, nl, y0, ny, swz};
++    // [arceus] The translator declares every sampled texture as float. A 32-bit integer texture read through a float
++    // sampler is undefined in Vulkan, but on the Switch the shader gets the raw bits (Legends: Arceus' reflection
++    // resolve: texelFetch(...).x then floatBitsToInt, from the R32_UINT buffer an imageAtomicMax filled): a float view
++    // of the same 32-bit channels returns exactly those bits. Images are MUTABLE_FORMAT (vk_texture.c), so it is allowed.
++    VkFormat vfmt = img->format;
++    if (!storage) switch (img->format) {
++        case VK_FORMAT_R32_UINT: case VK_FORMAT_R32_SINT: vfmt = VK_FORMAT_R32_SFLOAT; break;
++        case VK_FORMAT_R32G32_UINT: case VK_FORMAT_R32G32_SINT: vfmt = VK_FORMAT_R32G32_SFLOAT; break;
++        case VK_FORMAT_R32G32B32A32_UINT: case VK_FORMAT_R32G32B32A32_SINT: vfmt = VK_FORMAT_R32G32B32A32_SFLOAT; break;
++        default: break;
++        }
++    ViewKey k = {img->image, vfmt, vt, aspect, l0, nl, y0, ny, swz};
+     if (!view_of.klen) nvn_hm_init(&view_of, sizeof(ViewKey)), nvn_hm_init(&views_by_image, sizeof(VkImage));
+     VkImageView found = (VkImageView)nvn_hm_get(&view_of, &k);
+     if (found) return found;
+     VkImageViewCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = img->image, .viewType = vt,
+-                                .format = img->format,
++                                .format = vfmt,
+                                 .components = {swz_of(sw[0]), swz_of(sw[1]), swz_of(sw[2]), swz_of(sw[3])},
+                                 .subresourceRange = {aspect, l0, nl, y0, ny}};
+     VkImageViewUsageCreateInfo use = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO,
+@@ -655,7 +666,33 @@ static int find_stage(const prog_t *p, int nvn_stage, const uint8_t **ctl, const
+ // Texture and image types of a stage's first 32 slots, each kept with the handle and the generation and slot token it
+ // was looked up under: a slot is looked up again, a hash probe, only when the handle changed or its slot may resolve
+ // otherwise (slot_still).
+-static struct { uint64_t tex[32], img[32], ttok[32], itok[32]; uint32_t tgen[32], igen[32]; uint8_t tt[32], it[32]; } AC[6];
++static struct { uint64_t tex[32], img[32], ttok[32], itok[32]; uint32_t tgen[32], igen[32]; uint8_t tt[32], it[32], ifmt[32]; } AC[6];
++
++// [arceus] The storage-image format the translator declares (Ryujinx TextureFormat, gfx_shader.c fmt_names order).
++// Program.cs took it from TotK's PC shader metadata; without that it declared every image R8G8B8A8Unorm (float), so
++// integer images (Legends: Arceus' R32_UINT screen-space reflection pass before the water) were written and read as
++// floats: no reflections. 0 = unknown (the translator's default).
++static uint8_t img_fmt_code(VkFormat f) {
++    switch (f) {
++    case VK_FORMAT_R8_UNORM: return 1;  case VK_FORMAT_R8_SNORM: return 2;  case VK_FORMAT_R8_UINT: return 3;
++    case VK_FORMAT_R8_SINT: return 4;   case VK_FORMAT_R16_SFLOAT: return 5; case VK_FORMAT_R16_UNORM: return 6;
++    case VK_FORMAT_R16_SNORM: return 7; case VK_FORMAT_R16_UINT: return 8;  case VK_FORMAT_R16_SINT: return 9;
++    case VK_FORMAT_R32_SFLOAT: return 10; case VK_FORMAT_R32_UINT: return 11; case VK_FORMAT_R32_SINT: return 12;
++    case VK_FORMAT_R8G8_UNORM: return 13; case VK_FORMAT_R8G8_SNORM: return 14; case VK_FORMAT_R8G8_UINT: return 15;
++    case VK_FORMAT_R8G8_SINT: return 16; case VK_FORMAT_R16G16_SFLOAT: return 17; case VK_FORMAT_R16G16_UNORM: return 18;
++    case VK_FORMAT_R16G16_SNORM: return 19; case VK_FORMAT_R16G16_UINT: return 20; case VK_FORMAT_R16G16_SINT: return 21;
++    case VK_FORMAT_R32G32_SFLOAT: return 22; case VK_FORMAT_R32G32_UINT: return 23; case VK_FORMAT_R32G32_SINT: return 24;
++    case VK_FORMAT_R8G8B8A8_UNORM: case VK_FORMAT_B8G8R8A8_UNORM: return 25;
++    case VK_FORMAT_R8G8B8A8_SNORM: return 26; case VK_FORMAT_R8G8B8A8_UINT: return 27; case VK_FORMAT_R8G8B8A8_SINT: return 28;
++    case VK_FORMAT_R16G16B16A16_SFLOAT: return 29; case VK_FORMAT_R16G16B16A16_UNORM: return 30;
++    case VK_FORMAT_R16G16B16A16_SNORM: return 31; case VK_FORMAT_R16G16B16A16_UINT: return 32;
++    case VK_FORMAT_R16G16B16A16_SINT: return 33; case VK_FORMAT_R32G32B32A32_SFLOAT: return 34;
++    case VK_FORMAT_R32G32B32A32_UINT: return 35; case VK_FORMAT_R32G32B32A32_SINT: return 36;
++    case VK_FORMAT_A2B10G10R10_UNORM_PACK32: return 37; case VK_FORMAT_A2B10G10R10_UINT_PACK32: return 38;
++    case VK_FORMAT_B10G11R11_UFLOAT_PACK32: return 39;
++    default: return 0;
++    }
++}
+ 
+ // vk_texture_slot_token of the slot a texture or image handle names; an empty handle always resolves to nothing.
+ static uint64_t token_of(uint64_t h) { return h ? vk_texture_slot_token((int)(h & 0xfffff)) : 1; }
+@@ -697,6 +734,13 @@ static uint8_t type_of_handle(uint64_t h) {   // texture lock held
+     return img ? (uint8_t)gfx_type_of(img, &v, hv) : 0;
+ }
+ 
++static uint8_t fmt_of_handle(uint64_t h) {   // texture lock held; [arceus] img_fmt_code of the bound image
++    view_t v;
++    int hv;
++    const VkTexImage *img = h ? vk_texture_by_id_locked((int)(h & 0xfffff), &v, &hv) : NULL;
++    return img ? img_fmt_code(img->format) : 0;
++}
++
+ // The answers of stage st for the slots in mask; the types of other slots stay zero.
+ static void answers_for(VkExec *ex, int st, const uint8_t *ctl, uint32_t mask, GfxShaderAnswers *a) {
+     memset(a, 0, sizeof *a);
+@@ -722,10 +766,17 @@ static void answers_for(VkExec *ex, int st, const uint8_t *ctl, uint32_t mask, G
+         uint64_t tt = tmiss ? token_of(h) : 0, it = imiss ? token_of(hi) : 0;
+         if ((tmiss || imiss || check) && !locked) vk_texture_lock(), locked = 1, BS.ac_miss++;
+         if (tmiss) c->tt[slot] = type_of_handle(h), c->tex[slot] = h, c->ttok[slot] = tt, c->tgen[slot] = gen;
+-        if (imiss) c->it[slot] = type_of_handle(hi), c->img[slot] = hi, c->itok[slot] = it, c->igen[slot] = gen;
++        if (imiss) c->it[slot] = type_of_handle(hi), c->ifmt[slot] = fmt_of_handle(hi), c->img[slot] = hi, c->itok[slot] = it,
++                   c->igen[slot] = gen;
+         if (check && (type_of_handle(h) != c->tt[slot] || type_of_handle(hi) != c->it[slot]))   // TOTK_SHADER_MEMO=check
+             rt_fatal("vk_exec: kept texture types of stage %d slot %d differ from a lookup", st, slot);
+         a->tex_type[slot] = c->tt[slot], a->img_type[slot] = c->it[slot];
++        if (c->it[slot]) {   // [arceus] the image's real format (img_fmt_code)
++            a->img_format[slot] = c->ifmt[slot];
++            static int logged;
++            if (logged < 12 && c->ifmt[slot] && c->ifmt[slot] != 25)
++                logged++, rt_log("vk_exec: stage %d image slot %d: translator format %u", st, slot, (unsigned)c->ifmt[slot]);
++        }
+     }
+     if (locked) vk_texture_unlock();
+ }
+@@ alpha test answer (arceus) @@
+-    if (st == NVN_STAGE_VS) vk_pipeline_answers(&ex->pipe, a, NULL);
+-    else if (st == NVN_STAGE_FS) vk_pipeline_answers(&ex->pipe, NULL, a);
++    if (st == NVN_STAGE_VS) vk_pipeline_answers(&ex->pipe, a, NULL);
++    else if (st == NVN_STAGE_FS) {
++        vk_pipeline_answers(&ex->pipe, NULL, a);
++        // [arceus] the alpha test (nvnColorStateSetAlphaTest): the translated shader discards on it, with the reference
++        // from the support buffer (support_fill word 0), so a moving reference (dissolves) needs no new shader
++        unsigned af = ex->pipe.color.alpha_func;
++        a->alpha_func = (uint8_t)(af && af != NVN_ALPHA_FUNC_ALWAYS ? af : 0);
++    }
+@@ support inputs: alpha ref (arceus) 1 @@
+-    float sup_in[3];                     // the support_fill arguments it was filled from
++    float sup_in[4];                     // the support_fill arguments it was filled from ([arceus] 4: alpha ref)
+@@ support inputs: alpha ref (arceus) 2 @@
+-static void support_in(const VkExec *ex, float in[3]) {   // what support_fill reads: viewport size, point size
++static void support_in(const VkExec *ex, float in[4]) {   // what support_fill reads: viewport size, point size
++    in[3] = ex->alpha_ref;                                 // [arceus] the alpha test reference
+@@ support fill: alpha ref (arceus) @@
+-static void support_fill(uint8_t *b, float w, float h, float point_size) {
+-    memset(b, 0, SUPPORT_BYTES);
++static void support_fill(uint8_t *b, float w, float h, float point_size, float alpha_ref) {
++    memset(b, 0, SUPPORT_BYTES);
++    memcpy(b, &alpha_ref, 4);   // [arceus] alpha_test word: the alpha test reference (translated fragment shaders)
+@@ support fill call (arceus) tf @@
+-            float in[3];
+-            support_in(ex, in);
+-            VkBuffer sb;
+-            VkDeviceSize so;
+-            uint8_t *t = scratch(ex, SUPPORT_BYTES, &sb, &so);
+-            support_fill(t, in[0], in[1], in[2]);
++            float in[4];
++            support_in(ex, in);
++            VkBuffer sb;
++            VkDeviceSize so;
++            uint8_t *t = scratch(ex, SUPPORT_BYTES, &sb, &so);
++            support_fill(t, in[0], in[1], in[2], in[3]);
+@@ support fill call (arceus) draw @@
+-            float in[3];
+-            support_in(ex, in);
+-            if (!B.sup_valid || memcmp(in, B.sup_in, sizeof in)) {   // support_fill reads only these
+-                uint8_t tmp[SUPPORT_BYTES];
+-                support_fill(tmp, in[0], in[1], in[2]);
++            float in[4];
++            support_in(ex, in);
++            if (!B.sup_valid || memcmp(in, B.sup_in, sizeof in)) {   // support_fill reads only these
++                uint8_t tmp[SUPPORT_BYTES];
++                support_fill(tmp, in[0], in[1], in[2], in[3]);
+@@ support inputs: alpha ref (arceus) 3 @@
+-    float sup_in[3];             // the support buffer last filled for the list and its inputs
++    float sup_in[4];             // the support buffer last filled for the list and its inputs ([arceus] 4: alpha ref)
+@@ support fill call (arceus) list @@
+-            float in[3];
+-            support_in(ex, in);
+-            if (!MQ.sup.buffer || memcmp(in, MQ.sup_in, sizeof in)) {
+-                VkBuffer sb;
+-                VkDeviceSize so;
+-                support_fill(scratch(ex, SUPPORT_BYTES, &sb, &so), in[0], in[1], in[2]);
++            float in[4];
++            support_in(ex, in);
++            if (!MQ.sup.buffer || memcmp(in, MQ.sup_in, sizeof in)) {
++                VkBuffer sb;
++                VkDeviceSize so;
++                support_fill(scratch(ex, SUPPORT_BYTES, &sb, &so), in[0], in[1], in[2], in[3]);
+@@ descriptor reuse key: alpha ref (arceus) @@
+-    if (l->sup) {
+-        float in[3];
+-        support_in(ex, in);
+-        uint64_t a;
+-        uint32_t ps;
+-        memcpy(&a, in, 8), memcpy(&ps, &in[2], 4);
+-        PUT(a);
+-        PUT(ps);
+-    }
++    if (l->sup) {
++        float in[4];   // [arceus] 4: the alpha test reference is part of the support buffer
++        support_in(ex, in);
++        uint64_t a, pa;
++        memcpy(&a, in, 8), memcpy(&pa, &in[2], 8);
++        PUT(a);
++        PUT(pa);
++    }
+@@ alpha test switch (arceus) @@
+-        unsigned af = ex->pipe.color.alpha_func;
+-        a->alpha_func = (uint8_t)(af && af != NVN_ALPHA_FUNC_ALWAYS ? af : 0);
++        unsigned af = ex->pipe.color.alpha_func;
++        static int at_on = -1;   // SW_ALPHA_TEST=0: drawn without the test, as before
++        if (at_on < 0) { const char *e = getenv("SW_ALPHA_TEST"); at_on = !(e && *e == '0'); }
++        a->alpha_func = (uint8_t)(at_on && af && af != NVN_ALPHA_FUNC_ALWAYS ? af : 0);
+@@ shadow spread live @@
+-static const float *shadow_spread_params(void) {
+-    static float p[4] = {0, 0, 0, 0};
+-    if (p[0] == 0) {
+-        int scale = cfg_int("TOTK_SHADOW_SCALE");
+-        scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
+-        p[0] = 1.0f / (float)scale;
+-    }
+-    return p;
+-}
++static const float *shadow_spread_params(void) {
++    extern int vk_texture_shadow_scale(void);   // [arceus] the size the maps have now (changeable in game)
++    static float p[4] = {0, 0, 0, 0};
++    p[0] = 1.0f / (float)vk_texture_shadow_scale();
++    return p;
++}
+@@ render resolution: texture scales per draw @@
+-static void support_fill(uint8_t *b, float w, float h, float point_size, float alpha_ref) {
++// [arceus] Render resolution: the support buffer's RenderScale array for the draw being bound (rs_compute, before its
++// descriptors): [0] the pass's scale (the translator divides FragCoord by it), [1 + i] the scale of the stage's i-th
++// texture (non-array textures in the translator's order, then images) for the fragment and compute stages, and
++// [1 + fragment count + i] for the vertex stage; FragmentRenderScaleCount (byte 176) is the fragment stage's count. A
++// fragment-stage texture of the pass's aspect gets the negative scale: the translator's texelFetch then reads the
++// fragment's own texel (Ryujinx Helper_TexelFetchScale). All 1 without SW_RES_SCALE.
++static float RS_v[73];
++static int32_t RS_frag;
++static int RS_set;   // RS_v holds scales other than 1
++static int RS_prev, RS_dirty;   // the last draw's RS_set; either set: the support buffer is filled again
++extern int vk_texture_res_scale(void);
++extern int vk_texture_res_scaled(const VkTexImage *img);
++static void rs_fill(VkExec *ex, const VkPipeInfo *info);
++static void rs_compute(VkExec *ex, const VkPipeInfo *info) {
++    RS_set = 0, RS_frag = 0;
++    if (vk_texture_res_scale() == 1) return;
++    rs_fill(ex, info);
++    RS_dirty = RS_set || RS_prev, RS_prev = RS_set;
++}
++static void rs_fill(VkExec *ex, const VkPipeInfo *info) {
++    const GfxShaderRes *base[2][8] = {{0}};
++    int ntex[8] = {0}, nimg[8] = {0};
++    for (uint32_t i = 0; i < info->n_bindings; i++) {
++        const VkPipeBinding *b = &info->bindings[i];
++        if ((b->kind != GFX_RES_TEX && b->kind != GFX_RES_IMG) || !b->res || b->stage >= 8) continue;
++        int k = b->kind == GFX_RES_IMG;
++        if (!base[k][b->stage] || b->res < base[k][b->stage]) base[k][b->stage] = b->res;
++        if ((b->count ? b->count : 1) == 1) (k ? nimg : ntex)[b->stage]++;
++    }
++    RS_frag = ntex[GFX_STAGE_FS] + nimg[GFX_STAGE_FS];
++    for (int i = 0; i < 73; i++) RS_v[i] = 1.0f;
++    int gfx = info->bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS;
++    if (gfx && ex->pass_scale > 1) RS_v[0] = (float)ex->pass_scale, RS_set = 1;
++    vk_texture_lock();
++    for (uint32_t i = 0; i < info->n_bindings; i++) {
++        const VkPipeBinding *b = &info->bindings[i];
++        if ((b->kind != GFX_RES_TEX && b->kind != GFX_RES_IMG) || !b->res || b->stage >= 8) continue;
++        if ((b->count ? b->count : 1) != 1) continue;   // arrays of textures are not scaled by the translator
++        if (b->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || b->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) continue;
++        int k = b->kind == GFX_RES_IMG, idx = (int)(b->res - base[k][b->stage]) + (k ? ntex[b->stage] : 0);
++        int at = b->stage == GFX_STAGE_VS ? 1 + RS_frag + idx : 1 + idx;
++        if (at < 1 || at >= 73) continue;
++        int st = nvn_stage_of(b->stage), slot = b->res->slot;
++        uint64_t h = k ? (slot >= 0 && slot < 32 ? ex->img[st][slot] : 0) : (slot >= 0 && slot < 128 ? ex->tex[st][slot] : 0);
++        const VkTexImage *img = h ? vk_texture_by_id_locked((int)(h & 0xfffff), NULL, NULL) : NULL;
++        if (!img || img->scale <= 1 || !vk_texture_res_scaled(img)) continue;
++        float s = (float)img->scale;
++        if (b->stage == GFX_STAGE_FS && gfx && (uint64_t)img->width * ex->pass_h == (uint64_t)img->height * ex->pass_w) s = -s;
++        RS_v[at] = s, RS_set = 1;
++    }
++    vk_texture_unlock();
++}
++
++static void support_fill(uint8_t *b, float w, float h, float point_size, float alpha_ref) {
+@@ render resolution: scales into the support buffer @@
+-    for (int i = 0; i < 73; i++) memcpy(b + 192 + 16 * i, &one, 4);   // render scale 1: the host renders at guest size
++    for (int i = 0; i < 73; i++) memcpy(b + 192 + 16 * i, RS_set ? &RS_v[i] : &one, 4);   // [arceus] rs_compute
++    if (RS_set) memcpy(b + 176, &RS_frag, 4);   // FragmentRenderScaleCount
+@@ render resolution: computed before the descriptors @@
+-    uint32_t n_sets = info->n_sets ? info->n_sets : 1;
+-    uint32_t lo[2] = {0, 0}, hi[2] = {0, 0}, d0[2] = {0, 0};   // bindings [lo, hi) and first descriptor per set
++    rs_compute(ex, info);   // [arceus] render resolution: the support buffer's texture scales
++    uint32_t n_sets = info->n_sets ? info->n_sets : 1;
++    uint32_t lo[2] = {0, 0}, hi[2] = {0, 0}, d0[2] = {0, 0};   // bindings [lo, hi) and first descriptor per set
+@@ render resolution: support buffer refilled when scales are on @@
+-            if (!B.sup_valid || memcmp(in, B.sup_in, sizeof in)) {   // support_fill reads only these
++            if (!B.sup_valid || memcmp(in, B.sup_in, sizeof in) || RS_dirty) {   // support_fill reads these (and RS_v)

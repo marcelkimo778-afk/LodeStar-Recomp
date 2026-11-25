@@ -1,0 +1,112 @@
+# Build outputs
+System/build_work/out/
+System/build_work/gen/
+
+# Build logs
+*.log
+build.log
+System/build_work/out/build.log
+
+# Object files
+*.obj
+*.o
+
+# Executables
+*.exe
+sw_app.exe
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+.tmp_build/
+
+# Launcher config (optional - uncomment to ignore user config)
+# Settings/config.json
+
+# Backup directories (large, not for git)
+backups/
+backups/**/*
+
+# Old build directories
+_to_delete/
+build_work.backup_*/
+
+# Build cache (regenerates)
+System/Build/
+
+# Dispatch trace (runtime)
+dispatch_trace.txt
+
+# Linker response file
+objects.rsp
+
+# Missing seeds tracker
+missing_seeds.txt
+
+# Engine backup files
+System/Engine/Runtime/src/*.bak0
+System/Engine/Runtime/src/*.bak1
+
+# Test scripts (auto-generated)
+verify_*.py
+check_*.py
+trace_*.py
+debug_path.py
+
+# Game data (large, not for git)
+/Game/
+
+# System Resources (Windows)
+"System Resources/"
+
+# Cleanup staging (safe to delete)
+_trash_*/
+nul
+
+# Recompile outputs
+System/build_work/images/
+System/build_work/regen/
+.pytest_cache/
+.swrecomp/
+Settings/launcher.json
+
+# Mods (game content from the user: never commit) and the mod log
+/Mods/
+mods.log
+
+# Not needed to play: research, tools, mod downloads (2026-11-25 layout)
+/Developer/
+
+# The player's own settings: mod browser API keys (Settings/modbrowser.json), controls, history - never commit
+/Settings/*.json
+/Settings/controller_profiles/
+
+# build_work: only the build script and the shader translator's sources are part of the project; everything else
+# there is generated from the player's game (gen/, images/, out/, objcache/, exefs copies) or a local tool output
+/System/build_work/*
+!/System/build_work/build.py
+!/System/build_work/xlate/
+/System/build_work/xlate/*
+!/System/build_work/xlate/src/
+# made from running the game (PGO counters), local benchmark routes (they hold save copies), caches
+/System/Engine/pgo/
+/System/bench_routes/
+/System/Build/
+/Developer/

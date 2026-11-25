@@ -1,0 +1,31 @@
+/* LodeStar.exe resources: the launcher emblem (launcher/assets/launcher.ico, Engine/Tools/make_logos.py) and the
+ * file details Explorer shows (Properties > Details). */
+#include <winver.h>
+
+1 ICON "../../../launcher/assets/launcher.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Kimo"
+            VALUE "FileDescription", "Kimo's Lodestar"
+            VALUE "FileVersion", "1.0.0"
+            VALUE "InternalName", "LodeStar"
+            VALUE "OriginalFilename", "LodeStar.exe"
+            VALUE "ProductName", "Kimo's Lodestar"
+            VALUE "ProductVersion", "1.0.0"
+            VALUE "LegalCopyright", "Kimo"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

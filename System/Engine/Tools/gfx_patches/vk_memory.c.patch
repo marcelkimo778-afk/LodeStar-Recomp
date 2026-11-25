@@ -1,0 +1,46 @@
+--- generated/vk/vk_memory.c
++++ arceus/vk/vk_memory.c
+@@ SW_IMPORT_LOG @@
+         mem_thaw((uintptr_t)p->mem, p->size);   // the import may need write access to the pages
+-        ok = import_pool(c, r, (uintptr_t)p->mem, p->size);
++        {   // [measure] SW_IMPORT_LOG=1: time of each host-memory import (the driver probes the range page by page)
++            static int il = -1; static volatile int64_t tot_ns, cnt, bytes;
++            if (il < 0) { const char *e = getenv("SW_IMPORT_LOG"); il = e && *e == '1'; }
++            uint64_t t0 = il ? qpc() : 0;
++            ok = import_pool(c, r, (uintptr_t)p->mem, p->size);
++            if (il) {
++                uint64_t d = qpc() - t0;
++                plat_xadd64(&tot_ns, (int64_t)d); plat_xadd64(&cnt, 1); plat_xadd64(&bytes, (int64_t)p->size);
++                if (d > 2000000) rt_log("import: pool %#llx+%#llx: %.1f ms (total %lld imports, %.0f MB, %.0f ms)",
++                                        (unsigned long long)(uintptr_t)p->mem, (unsigned long long)p->size, d / 1e6,
++                                        (long long)cnt, bytes / 1048576.0, tot_ns / 1e6);
++            }
++        }
+@@ -1424,9 +1424,25 @@ static void mirror_sync(PoolRec *r) {
+ 
+ void vk_mem_use(VkMemSpan *sp) {
+     PoolRec *r = sp->pool;
+-    if (r->mstate == MS_NONE) mirror_create(r);
++    if (r->mstate == MS_NONE) {
++        uint64_t t0 = qpc();   // [arceus] SW_THUNK_SLOW: slow first uses (a mirror copies the whole pool)
++        mirror_create(r);
++        static int slow_on = -1;
++        if (slow_on < 0) { const char *e = getenv("SW_THUNK_SLOW"); slow_on = e && atof(e) > 0; }
++        double ms = qpc_ms(qpc() - t0);
++        if (slow_on && ms > 5.0)
++            rt_log("mem: mirror of pool %#llx (%.1f MiB) took %.1f ms", (unsigned long long)r->lo,
++                   (double)(r->import_hi - r->import_lo) / 1048576.0, ms);
++    }
+     if (r->mstate != MS_ON) return;
+-    if (r->acc_sub != msub) mirror_sync(r);
++    if (r->acc_sub != msub) {
++        uint64_t t0 = qpc();
++        mirror_sync(r);
++        static int slow_on = -1;
++        if (slow_on < 0) { const char *e = getenv("SW_THUNK_SLOW"); slow_on = e && atof(e) > 0; }
++        double ms = qpc_ms(qpc() - t0);
++        if (slow_on && ms > 5.0) rt_log("mem: mirror sync of pool %#llx took %.1f ms", (unsigned long long)r->lo, ms);
++    }
+     sp->buffer = r->mbuf;
+ }
+ 

@@ -1,0 +1,56 @@
+--- generated/vk/vk_dlaa.c
++++ arceus/vk/vk_dlaa.c
+@@ arceus: camera block size @@
+-#define CAM_BLOCK 0x940u   // the whole block, kept for the per-object motion pass's vertex shaders (vk_exec_draw.c)
++// [arceus] Legends: Arceus' camera block is c4 of 0x1C0 bytes: [0-3] view-projection, [4-7] view, [8-11] projection
++// (reversed depth), [16-19] the camera's world matrix, [20-23] the inverse projection (frame dump 2026-11-25).
++#define CAM_BLOCK 0x1c0u   // the whole block, kept for the per-object motion pass's vertex shaders (vk_exec_draw.c)
++#define CAM_VP_OFF 0u      // [arceus] byte offset of the view-projection matrix in it (TotK: 48)
++static int scene_depth(VkFormat f) { return f == VK_FORMAT_D32_SFLOAT || f == VK_FORMAT_D32_SFLOAT_S8_UINT; }   // [arceus]
+@@ arceus: view-projection at offset 0 @@
+-    const float *cr = (const float *)vk_usnap_bytes(D.cam_addr + 48, 64);
++    const float *cr = (const float *)vk_usnap_bytes(D.cam_addr + CAM_VP_OFF, 64);
+@@ arceus: camera block recognised by its size and the D32F(S8) depth @@
+-    if (b->size == 0x940 && b->addr && z->image && z->width >= DLAA_SCENE_MIN_W && z->format == VK_FORMAT_D32_SFLOAT &&
++    if (b->size == CAM_BLOCK && b->addr && z->image && z->width >= DLAA_SCENE_MIN_W && scene_depth(z->format) &&
+@@ arceus: G-buffer depth D32F S8 @@
+-    if (ex->pass_ncolor >= 3 && z->image && z->format == VK_FORMAT_D32_SFLOAT && z->width >= DLAA_SCENE_MIN_W) {
++    if (ex->pass_ncolor >= 3 && z->image && scene_depth(z->format) && z->width >= DLAA_SCENE_MIN_W) {
+@@ arceus: light pass has the R11G11B10F target and an R8 mask @@
+-    if (D.gbuf && ex->pass_ncolor == 1 && c->image && scene_color(c->format) && z->image && z->format == VK_FORMAT_D32_SFLOAT &&
++    if (D.gbuf && ex->pass_ncolor <= 2 && c->image && scene_color(c->format) && z->image && scene_depth(z->format) &&
+@@ arceus: the scene ends at the first half-width pass (bloom), not the quarter-width one @@
+-        if (!ex->pass_w || ex->pass_w * 4 > D.color.width) return;
++        // [arceus] Arceus draws a quarter-size pass (480x270) between its lighting and its transparents; the scene ends
++        // at the bloom chain's first pass, half the light target's width
++        if (!ex->pass_w || ex->pass_w * 2 != D.color.width) return;
+@@ arceus: SW_DLAA_LOG pass log @@
+-void vk_dlaa_pass(VkExec *ex) {
+-    const VkExecTarget *c = &ex->color[0], *z = &ex->depth;
+-    if (!dl_active() || D.done) return;
++void vk_dlaa_pass(VkExec *ex) {
++    const VkExecTarget *c = &ex->color[0], *z = &ex->depth;
++    {   // [arceus] SW_DLAA_LOG=1: the first 400 passes the detector sees (targets, sizes, state)
++        static int lg = -1, n;
++        if (lg < 0) lg = rt_knob("DLAA_LOG", "0");
++        if (lg && n < 400 && dl_active() && !D.done)
++            n++, rt_log("dlaa-log: pass %ux%u ncolor %u c0 fmt %d %ux%u depth fmt %d %ux%u | gbuf %d armed %d ended %d",
++                        ex->pass_w, ex->pass_h, ex->pass_ncolor, c->image ? (int)c->format : -1, c->width, c->height,
++                        z->image ? (int)z->format : -1, z->width, z->height, D.gbuf, D.armed, D.ended);
++    }
++    if (!dl_active() || D.done) return;
+@@ arceus: count bound colour targets @@
+-static int scene_depth(VkFormat f) { return f == VK_FORMAT_D32_SFLOAT || f == VK_FORMAT_D32_SFLOAT_S8_UINT; }   // [arceus]
++static int scene_depth(VkFormat f) { return f == VK_FORMAT_D32_SFLOAT || f == VK_FORMAT_D32_SFLOAT_S8_UINT; }   // [arceus]
++// [arceus] Arceus sets 8 render targets on every pass (unused ones empty): count the bound ones
++static int ncol(const VkExec *ex) {
++    int n = 0;
++    for (int i = 0; i < 8; i++) n += ex->color[i].image != VK_NULL_HANDLE;
++    return n;
++}
+@@ arceus: G-buffer by bound targets @@
+-    if (ex->pass_ncolor >= 3 && z->image && scene_depth(z->format) && z->width >= DLAA_SCENE_MIN_W) {
++    if (ncol(ex) >= 3 && z->image && scene_depth(z->format) && z->width >= DLAA_SCENE_MIN_W) {
+@@ arceus: light pass by bound targets @@
+-    if (D.gbuf && ex->pass_ncolor <= 2 && c->image && scene_color(c->format) && z->image && scene_depth(z->format) &&
++    if (D.gbuf && ncol(ex) <= 2 && c->image && scene_color(c->format) && z->image && scene_depth(z->format) &&

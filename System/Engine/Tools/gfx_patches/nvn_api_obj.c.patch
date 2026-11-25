@@ -1,0 +1,76 @@
+--- generated/nvn_api_obj.c
++++ arceus/nvn_api_obj.c
+@@ -10,6 +10,7 @@
+ // AAPCS64 registers (host.h arg_x / arg_s / arg_p) and every result returned with ret_x. Command-buffer procs are in
+ // nvn_api_cmd.c, the TOTK extension procs in nvn_ext.c.
+ #include <stdint.h>
++#include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+@@ -626,6 +627,10 @@
+     win_t *o = WN(c);
+     int v = (int)arg_x(c, 1);
+     if (o->interval != v) NVN_LOG("present interval %d -> %d", o->interval, v);
++    if (getenv("SW_LOG_INTERVAL"))   // finding the game's frame-time code (60 fps): who sets the interval
++        fprintf(stderr, "[fps] SetPresentInterval %d from lr 0x%llx fn 0x%llx config x21 0x%llx x19 0x%llx\n", v,
++                (unsigned long long)c->x[30], (unsigned long long)c->cur_fn, (unsigned long long)c->x[21],
++                (unsigned long long)c->x[19]);
+     o->interval = v;
+ }
+ // void nvnWindowSetCrop(NVNwindow *w, int x, int y, int w, int h)
+@@ -644,7 +649,14 @@
+ #define VSYNC_HZ 60ull
+ static uint64_t present_period(const win_t *o) {
+     if (frame_step_realtime()) return frame_step_cap_ns();
+-    return (o->interval > 0 ? (uint64_t)o->interval : 1ull) * 1000000000ull / VSYNC_HZ;
++    // SW_FPS / in-game menu (src/sw_hooks.c): sets the game's own frame interval (its world step) and returns the
++    // interval to pace at; 0 = the game's nvnWindowSetPresentInterval value (2 = 30 fps).
++    extern int sw_fps_interval(void);
++    static int force = -1;   // SW_PRESENT_INTERVAL=n: pacer only (the game then runs at the wrong speed) - experiments
++    if (force < 0) { const char *e = getenv("SW_PRESENT_INTERVAL"); force = e && atoi(e) > 0 ? atoi(e) : 0; }
++    int fps_iv = sw_fps_interval();
++    extern unsigned long long sw_fps_period_ns(void);   // 90 / 120 fps: an exact period, not whole vsyncs
++    unsigned long long fps_ns = sw_fps_period_ns();
++    if (!force && fps_ns) return fps_ns;
++    int iv = force ? force : fps_iv ? fps_iv : o->interval;
++    return (iv > 0 ? (uint64_t)iv : 1ull) * 1000000000ull / VSYNC_HZ;
+ }
+ 
+ // MacNativeGames nvn_pace.h: the present slot is the previous slot plus one period. Early: wait for the slot. Late by
+@@ -707,6 +719,7 @@
+     if (o->magic != NVN_WIN_MAGIC || idx < 0 || idx >= o->ntex || idx >= 4 || !o->tex[idx])
+         rt_fatal("nvn: QueuePresentTexture of image %d on window %p", idx, (void *)o);
+     o->presents++;
++    { extern void sw_fps_debug_present(void); sw_fps_debug_present(); }   // SW_SCAN_F32 / SW_POKE (src/sw_hooks.c)
+     const tex_t *t = (const tex_t *)o->tex[idx];
+     uint64_t period = present_period(o), now = kern_now_ns();
+     uint64_t slot = now + pace(&o->pace, now, period);
+@@ -76,5 +76,22 @@
+ NVN_API(nvnTextureBuilderSetSize2D) {
+     tex_builder_t *b = TB(c);
+     b->d.width = (uint32_t)arg_x(c, 1);
+     b->d.height = (uint32_t)arg_x(c, 2);
+     b->d.depth = 1;
++    {   // [arceus] SW_RT_TRACE=1: who asks for screen-sized textures (render resolution work): size, caller and the
++        // frame-pointer chain, each distinct (size, caller) once
++        static int on = -1;
++        static uint64_t seen[512];
++        static int nseen;
++        if (on < 0) { const char *e = getenv("SW_RT_TRACE"); on = e && *e == '1'; }
++        uint32_t w = b->d.width, h = b->d.height;
++        if (on && nseen < 512 && w >= 240 && h >= 135 && w * 9 == h * 16) {
++            uint64_t key = ((uint64_t)w << 48) ^ ((uint64_t)h << 32) ^ c->x[30];
++            int dup = 0;
++            for (int i = 0; i < nseen && !dup; i++) dup = seen[i] == key;
++            if (!dup) {
++                seen[nseen++] = key;
++                uint64_t fp = c->x[29], r[4] = {0};
++                for (int i = 0; i < 4 && fp && !(fp & 7); i++) { r[i] = ((uint64_t *)(uintptr_t)fp)[1]; fp = ((uint64_t *)(uintptr_t)fp)[0]; }
++                fprintf(stderr, "[rt] %ux%u lr 0x%llx fn 0x%llx chain 0x%llx 0x%llx 0x%llx 0x%llx\n", w, h,
++                        (unsigned long long)c->x[30], (unsigned long long)c->cur_fn, (unsigned long long)r[0],
++                        (unsigned long long)r[1], (unsigned long long)r[2], (unsigned long long)r[3]);
++            }
++        }
++    }
+ }

@@ -1,0 +1,7 @@
+--- generated/nvn_ext.c
++++ arceus/nvn_ext.c
+@@ alpha ref: recorded in nvn_api_cmd.c (arceus) @@
+-// void nvnCommandBufferSetAlphaRef(NVNcommandBuffer *cmd, float ref): used only with the alpha test, which the replay
+-// reports
+-NVN_API(nvnCommandBufferSetAlphaRef) { (void)c; }
++// nvnCommandBufferSetAlphaRef: [arceus] recorded in nvn_api_cmd.c (the alpha test is applied, see vk_exec_draw.c)

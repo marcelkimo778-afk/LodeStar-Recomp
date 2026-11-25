@@ -1,0 +1,225 @@
+--- generated/vk/vk_exec_xfer.c
++++ arceus/vk/vk_exec_xfer.c
+@@ -133,6 +133,8 @@
+ static int oq_counting;                  // replay: draws are counted (a reset since the last report, or oq_keep)
+ static int oq_reported;                  // replay: a samples-passed report since the last reset
+ static int oq_keep;                      // replay: the game reported twice without a reset: count every draw
++extern unsigned oq_dn, oq_dskip; extern char oq_last[512];
++static int oq_win, oq_nwin;              // [arceus] SW_OQ_LOG: logging the draws between a reset and its report
+ static int oq_open = -1;                 // replay: the slot whose query is active in the open pass
+ static uint32_t *oq_seg;                 // replay: slots closed since the last report or reset
+ static uint32_t oq_nseg, oq_capseg;
+@@ -195,12 +197,81 @@
+ }
+ 
+ void vk_exec_oq_pass_end(VkExec *ex) { oq_close(ex); }
++int vk_exec_oq_window(void) { return oq_win; }
++int vk_exec_oq_counting(void) { return oq_counting && oq_state > 0; }   // [arceus] debugging
+ 
+ void vk_exec_xfer_shutdown(void) {
+     if (oq_state > 0) vkDestroyQueryPool(vk_ctx()->device, oq_pool, NULL);
+     oq_pool = VK_NULL_HANDLE, oq_state = 0, oq_next = 0, oq_counting = oq_reported = oq_keep = 0, oq_open = -1;
+     oq_nseg = 0, oq_lost = 0, oq_count = 0;
+     memset((void *)oq_busy, 0, sizeof oq_busy);
++}
++
++// [arceus] NPC talk / wild Pokemon sight debugging.
++// SW_OQ_FORCE=1: every samples-passed report gets +1000 (each report larger than the one before: "visible").
++// SW_OQ_LOG=1: per report address, how often it is written, how often nothing passed since the previous
++// report (delta 0) or it had no draws at all, and whether a conditional render reads it (GPU use; an address
++// no condition reads is read back by game code on the CPU).  Printed every 500 reports.
++static int oq_force(void) {
++    static int f = -1;
++    if (f < 0) { const char *e = getenv("SW_OQ_FORCE"); f = e && *e == '1'; }
++    return f;
++}
++int vk_exec_oq_log_on(void);
++static int oq_log_on(void) { return vk_exec_oq_log_on(); }
++int vk_exec_oq_log_on(void) {
++    static int f = -1;
++    if (f < 0) { const char *e = getenv("SW_OQ_LOG"); f = e && *e == '1'; }
++    return f;
++}
++#define OQ_ST 2048
++static struct { uint64_t addr, last; uint32_t n, zero, nodraw, cond; } oq_st[OQ_ST];
++static uint64_t oq_st_reports, oq_st_resets, oq_st_noaddr;
++
++static uint32_t oq_st_slot(uint64_t addr) {
++    uint32_t h = (uint32_t)((addr >> 3) * 2654435761u) % OQ_ST;
++    for (uint32_t k = 0; k < OQ_ST; k++, h = (h + 1) % OQ_ST)
++        if (oq_st[h].addr == addr || !oq_st[h].addr) { oq_st[h].addr = addr; return h; }
++    return UINT32_MAX;
++}
++
++static void oq_mark_cond(uint64_t addr) {
++    if (!oq_log_on()) return;
++    uint32_t h = oq_st_slot(addr);
++    if (h != UINT32_MAX) oq_st[h].cond++;
++}
++
++static void oq_stat(const OqSegment *s, uint64_t sum) {
++    if (!oq_log_on()) return;
++    if (s->reset) { oq_st_resets++; return; }
++    oq_st_reports++;
++    if (!s->addr) oq_st_noaddr++;
++    else {
++        uint32_t h = oq_st_slot(s->addr);
++        if (h != UINT32_MAX) {
++            oq_st[h].n++, oq_st[h].last = oq_count;
++            if (!sum) oq_st[h].zero++;
++            if (!s->n) oq_st[h].nodraw++;
++        }
++    }
++    if (oq_st_reports % 500 && oq_st_reports != 1 && oq_st_reports != 10 && oq_st_reports != 50 && oq_st_reports != 100 && oq_st_reports != 250) return;
++    uint32_t used = 0, cpu = 0, cpu_zero = 0;
++    for (uint32_t i = 0; i < OQ_ST; i++) if (oq_st[i].n) {
++        used++;
++        if (!oq_st[i].cond) { cpu++; if (oq_st[i].zero == oq_st[i].n) cpu_zero++; }
++    }
++    rt_log("[oq] %llu reports, %llu resets, %llu to GPU-only memory; %u addresses, %u never used by a render "
++           "condition (CPU-read), %u of those always delta 0",
++           (unsigned long long)oq_st_reports, (unsigned long long)oq_st_resets, (unsigned long long)oq_st_noaddr,
++           used, cpu, cpu_zero);
++    uint32_t shown = 0;
++    for (uint32_t i = 0; i < OQ_ST && shown < 40; i++) if (oq_st[i].n && !oq_st[i].cond) {
++        rt_log("[oq]   cpu addr %#llx: %u reports, %u delta 0, %u without draws, last %llu",
++               (unsigned long long)oq_st[i].addr, oq_st[i].n, oq_st[i].zero, oq_st[i].nodraw,
++               (unsigned long long)oq_st[i].last);
++        shown++;
++    }
++    if (oq_st_reports % 500 == 0) for (uint32_t i = 0; i < OQ_ST; i++) oq_st[i].n = oq_st[i].zero = oq_st[i].nodraw = 0;
+ }
+ 
+ static void oq_cb(void *arg) {
+@@ -218,6 +289,15 @@
+             vk_device_fault_report(r);
+             rt_fatal("vk: occlusion query results failed (%d)", (int)r);
+         }
++        {   // [arceus] SW_OQ_LOG=1: raw results of the first segments with queries
++            static int nraw;
++            if (oq_log_on() && nraw < 20) {
++                nraw++;
++                rt_log("[oq] raw: r=%d slots %u..%u (%u), first value %llu avail %llu, last value %llu avail %llu, flags %#x",
++                       (int)r, s->q[i], s->q[j - 1], j - i, (unsigned long long)v[0], (unsigned long long)v[1],
++                       (unsigned long long)v[2 * (j - i - 1)], (unsigned long long)v[2 * (j - i - 1) + 1], (unsigned)oq_flags);
++            }
++        }
+         vkResetQueryPool(dev, oq_pool, s->q[i], j - i);
+         for (uint32_t k = i; k < j; k++) {
+             if (v[2 * (k - i) + 1]) sum += v[2 * (k - i)];
+@@ -233,8 +313,10 @@
+     else {
+         oq_count += sum;
+         if (s->lost && !oq_count) oq_count = 1;
++        if (oq_force()) oq_count += 1000;   // [arceus] SW_OQ_FORCE=1: every report "visible"
+         if (s->addr) write_counter(s->addr, oq_count);
+     }
++    oq_stat(s, sum);
+     free(s);
+ }
+ 
+@@ -253,11 +335,22 @@
+     if (p->type != NVN_COUNTER_TYPE_SAMPLES_PASSED || !oq_ready()) return;
+     oq_segment(ex, 0, 1);
+     oq_counting = 1, oq_reported = 0;
++    if (oq_log_on() && oq_nwin < 40) {
++        if (oq_win) rt_log("[oq] ev %d RESET after %u draws (%u skipped); last: %s", oq_nwin, oq_dn, oq_dskip, oq_dn + oq_dskip ? oq_last : "-");
++        else rt_log("[oq] ev %d RESET (first)", oq_nwin);
++        oq_win = 1, oq_dn = oq_dskip = 0, oq_nwin++;
++    }
+ }
+ 
+ // A samples-passed report: the segment goes with it (addr 0: no CPU-visible memory) and counting stops until the next
+ // reset, unless reports came without resets before.
+ static void oq_report(VkExec *ex, uint64_t addr) {
++    if (oq_win) {
++        rt_log("[oq] ev %d REPORT to %#llx after %u draws (%u skipped), counting %d; last: %s", oq_nwin, (unsigned long long)addr,
++               oq_dn, oq_dskip, oq_counting, oq_dn + oq_dskip ? oq_last : "-");
++        oq_dn = oq_dskip = 0;
++        if (++oq_nwin >= 40) oq_win = 0;
++    }
+     oq_segment(ex, addr, 0);
+     if (oq_reported && !oq_keep) {
+         oq_keep = 1;
+@@ -312,6 +405,7 @@
+ 
+ static int cond_enabled(const p_render_cond *c) {
+     uint64_t x, y;
++    oq_mark_cond(c->addr), oq_mark_cond(c->addr + 16);
+     int rx = counter_word(c->addr, &x), ry = counter_word(c->addr + 16, &y);
+     if (!rx || !ry) {
+         warn_once(W_BUFFER, "conditional render counters at %#llx are not readable: rendering", (unsigned long long)c->addr);
+@@ -436,7 +436,11 @@ static int sub_resolve(const tex_t *t, const view_t *v, int has_v, const NVNcopy
+     memset(s, 0, sizeof *s);
+     if (!t) return 0;
+     TexVkFormat f;
+-    if (!tex_vk_format(t->d.format, &f) || f.vk != f.ideal || f.expand_rgb || f.astc_bw) {
++    // [arceus] defaults_to_level 2 = texture to texture (copy_t2t): both images hold the host format, so a host format
++    // other than the ideal one is fine there - NVN 0x35 (D24S8, the game's depth buffer) lives as D32_SFLOAT_S8 and
++    // its 1920x1080 -> 480x270 copy for the water was skipped. Copies to / from buffers still need the ideal layout.
++    if (!tex_vk_format(t->d.format, &f) || (f.vk != f.ideal && !(defaults_to_level == 2 && (f.depth || f.stencil))) ||
++        f.expand_rgb || f.astc_bw) {
+         warn_once(W_FORMAT, "copy of format %#x texture (decoded or expanded on upload): skipped", t->d.format);
+         return 0;
+     }
+@@ -449,7 +453,12 @@ static int sub_resolve(const tex_t *t, const view_t *v, int has_v, const NVNcopy
+     const VkTexImage *img = s->img;
+     if (img->aspect & VK_IMAGE_ASPECT_COLOR_BIT) s->aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+     else if (img->aspect == VK_IMAGE_ASPECT_DEPTH_BIT) s->aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+-    else {
++    else if (defaults_to_level == 2) {
++        // [arceus] a texture-to-texture copy of a depth-stencil image (copy_t2t): both aspects. Legends: Arceus
++        // copies its D32_S8 depth buffer down to 480x270 for the water (depth under the surface: shore fade,
++        // transparency, refraction); skipped, the water saw depth 0 everywhere and drew flat deep-water colour.
++        s->aspect = img->aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
++    } else {
+         warn_once(W_FORMAT, "copy of depth-stencil format %#x texture: skipped", t->d.format);
+         return 0;
+     }
+@@ -461,7 +470,9 @@ static int sub_resolve(const tex_t *t, const view_t *v, int has_v, const NVNcopy
+     s->nz = r->depth > 0 ? (uint32_t)r->depth : 1;
+     s->w = r->width > 0 ? (uint32_t)r->width * k : defaults_to_level ? (s->x < (int32_t)lw ? lw - (uint32_t)s->x : 0) : 0;
+     s->h = r->height > 0 ? (uint32_t)r->height * k : defaults_to_level ? (s->y < (int32_t)lh ? lh - (uint32_t)s->y : 0) : 0;
+-    if (cfg_bool("COPY_CLAMP") && s->level < img->levels) {
++    static int copy_clamp = -1;   // [arceus] read once (a getenv per copy otherwise)
++    if (copy_clamp < 0) copy_clamp = cfg_bool("COPY_CLAMP");
++    if (copy_clamp && s->level < img->levels) {
+         if (s->x < 0 || (uint32_t)s->x >= lw) s->x = 0;
+         if (s->y < 0 || (uint32_t)s->y >= lh) s->y = 0;
+         if ((uint64_t)s->x + s->w > lw) s->w = lw - (uint32_t)s->x;
+@@ -542,8 +553,8 @@ static void copy_buffer_image(VkExec *ex, const p_copy_b2t *p, int to_image) {
+ 
+ static void copy_t2t(VkExec *ex, const p_copy_t2t *p) {
+     Sub s, d;
+-    if (!sub_resolve(p->src, &p->sv, p->has_sv, &p->sr, 1, &s)) return;
+-    if (!sub_resolve(p->dst, &p->dv, p->has_dv, &p->dr, 1, &d)) return;
++    if (!sub_resolve(p->src, &p->sv, p->has_sv, &p->sr, 2, &s)) return;   // 2: depth-stencil allowed (sub_resolve)
++    if (!sub_resolve(p->dst, &p->dv, p->has_dv, &p->dr, 2, &d)) return;
+     d.nz = s.nz;
+     int same_size = s.w == d.w && s.h == d.h;
+     int same_format = s.img->format == d.img->format;
+@@ -556,6 +567,13 @@ static void copy_t2t(VkExec *ex, const p_copy_t2t *p) {
+         return;
+     }
+     VkImageSubresourceLayers sl = sub_layers(&s), dl = sub_layers(&d);
++    if (s.aspect & VK_IMAGE_ASPECT_STENCIL_BIT) {   // [arceus] depth-stencil copies (water depth): the first few
++        static int logged;
++        if (logged++ < 6)
++            rt_log("vk: depth-stencil copy %ux%u -> %ux%u, images %p -> %p, aspect %#x/%#x, %s", s.w, s.h, d.w, d.h,
++                   (void *)s.img->image, (void *)d.img->image, (unsigned)sl.aspectMask, (unsigned)dl.aspectMask,
++                   same_size && same_format ? "copy" : "blit");
++    }
+     vk_exec_pass_end(ex);
+     vk_exec_barrier(ex);
+     if (s.img->samples > 1 && d.img->samples == 1) {
+@@ render resolution: buffer copies fall back @@
+-    if (s.img->scale > 1) {   // the buffer holds the game's texel count, the image more
+-        warn_once(W_REGION, "buffer copy of a shadow map enlarged by TOTK_SHADOW_SCALE: skipped");
+-        return;
+-    }
++    if (s.img->scale > 1) {   // the buffer holds the game's texel count, the image more
++        extern void vk_texture_res_fallback(const VkTexImage *img, const char *why);
++        vk_texture_res_fallback(s.img, "copied to or from a buffer");   // [arceus] render resolution: native next time
++        warn_once(W_REGION, "buffer copy of a texture enlarged by TOTK_SHADOW_SCALE or SW_RES_SCALE: skipped");
++        return;
++    }

@@ -1,0 +1,39 @@
+#version 450
+// A generated frame at time t between the previous (s0) and current (s1) frame, with the flow s2 (quarter size,
+// full-picture pixels). Unchanged pixels are kept exactly (the HUD stays sharp); where the two warped samples
+// disagree (something appears or disappears) the nearer real frame is used.
+#include "fg_common.glsl"
+void main() {
+    ivec2 q = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(q, pc.size))) return;
+    vec4 a0 = texelFetch(s0, q, 0), b0 = texelFetch(s1, q, 0);
+    float d0 = 0.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) {
+            ivec2 p = clamp(q + ivec2(x, y), ivec2(0), pc.size - 1);
+            d0 = max(d0, abs(luma(texelFetch(s0, p, 0).rgb) - luma(texelFetch(s1, p, 0).rgb)));
+        }
+    if (d0 < 1.5 / 255.0) { imageStore(dst, q, mix(a0, b0, pc.t)); return; }
+    vec2 px = vec2(q) + 0.5, inv = 1.0 / vec2(pc.size);
+    vec2 f = textureLod(s2, px * inv, 0.0).xy;
+    vec2 pa = px - pc.t * f, pb = px + (1.0 - pc.t) * f;
+    vec4 a = textureLod(s0, pa * inv, 0.0);
+    vec4 b = textureLod(s1, pb * inv, 0.0);
+    // a sample from outside the picture (scenery coming in at the edge): the other frame has it
+    bool ia = all(greaterThanEqual(pa, vec2(0.0))) && all(lessThan(pa, vec2(pc.size)));
+    bool ib = all(greaterThanEqual(pb, vec2(0.0))) && all(lessThan(pb, vec2(pc.size)));
+    if (ia != ib) { imageStore(dst, q, ia ? a : b); return; }
+    // standing still against the motion, over 3x3: HUD drawn over moving scenery (half transparent icons) fits
+    // standing still better, and stays where it is
+    float es = 0.0, em = 0.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) {
+            vec2 o = vec2(x, y);
+            es += abs(luma(textureLod(s0, (px + o) * inv, 0.0).rgb) - luma(textureLod(s1, (px + o) * inv, 0.0).rgb));
+            em += abs(luma(textureLod(s0, (pa + o) * inv, 0.0).rgb) - luma(textureLod(s1, (pb + o) * inv, 0.0).rgb));
+        }
+    if (es < em * 0.7) { imageStore(dst, q, mix(a0, b0, pc.t)); return; }
+    float e = abs(luma(a.rgb) - luma(b.rgb));
+    vec4 blend = mix(a, b, pc.t), near = pc.t < 0.5 ? a : b;
+    imageStore(dst, q, mix(blend, near, smoothstep(0.05, 0.18, e)));
+}

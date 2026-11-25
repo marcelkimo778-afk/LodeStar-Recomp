@@ -1,0 +1,17 @@
+@nsobid-AABBCCDD11223344556677889900AABBCCDDEEFF
+@flag offset_shift 0x100
+
+// 60 FPS
+@enabled
+00000800 80078052
+
+// Data tweak
+@enabled
+00001010 DEADBEEF
+00001020 "hi"
+
+// Disabled tweak
+@disabled
+00001030 CAFEBABE
+@stop
+00001040 CAFEBABE

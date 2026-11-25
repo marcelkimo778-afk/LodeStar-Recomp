@@ -1,0 +1,52 @@
+--- generated/vk/vk_backend.c
++++ arceus/vk/vk_backend.c
+@@ frame generation (arceus): part 1 @@
+-#include "vk_dlaa.h"
++#include "vk_dlaa.h"
++#include "sw_framegen.h"   // [arceus] frame generation
+@@ frame generation (arceus): part 2 @@
+-typedef struct { VkImage image; VkFormat format; int w, h, has_crop, crop[4]; uint64_t frame, at, queued, value; } PresentJob;
++typedef struct { VkImage image; VkFormat format; int w, h, has_crop, crop[4]; uint64_t frame, at, queued, value;
++                 int fg; SwFgJob fgj; } PresentJob;   // [arceus] fg: frame generation, the picture is in its history
+@@ frame generation (arceus): part 3 @@
+-        if (flight_on) vk_thumbs_frame(j.frame);
+-        vk_present_blit(j.image, VK_IMAGE_LAYOUT_GENERAL, j.format, j.w, j.h, j.has_crop ? j.crop : NULL);
++        if (flight_on) vk_thumbs_frame(j.frame);
++        if (!j.fg) vk_present_blit(j.image, VK_IMAGE_LAYOUT_GENERAL, j.format, j.w, j.h, j.has_crop ? j.crop : NULL);
+@@ frame generation (arceus): part 4 @@
+-        uint64_t t0 = kern_now_ns();
+-        wait_until(j.at);
+-        uint64_t t1 = kern_now_ns();
+-        vk_present_flip();
++        uint64_t t0 = kern_now_ns();
++        if (j.fg) sw_fg_present(&j.fgj);   // [arceus] the generated pictures at their times, then this one
++        else wait_until(j.at);
++        uint64_t t1 = kern_now_ns();
++        if (!j.fg) vk_present_flip();
+@@ frame generation (arceus): part 5 @@
+-    while (pending || busy) plat_cond_wait(&pcv, &pl);
+-    plat_mutex_unlock(&pl);
+-    perf_end(PERF_DRAIN, p0);
++    while ((pending && !job.fg) || busy) plat_cond_wait(&pcv, &pl);   // [arceus] a frame generation job reads no game state
++    plat_mutex_unlock(&pl);
++    perf_end(PERF_DRAIN, p0);
+@@ frame generation (arceus): part 6 @@
+-    while (pending) plat_cond_wait(&pcv, &pl);   // one present in waiting at most
+-    job = j;
++    while (pending) plat_cond_wait(&pcv, &pl);   // one present in waiting at most
++    // [arceus] frame generation: the picture is copied into its history here, in queue order right after the game's
++    // submissions that wrote it; the job then no longer reads the game's image
++    j.fg = sw_fg_capture(j.image, j.format, j.w, j.h, j.has_crop ? j.crop : NULL, j.at, &j.fgj);
++    job = j;
+@@ render resolution: crop in the image's texels @@
+-    if (crop) {
+-        j.has_crop = 1;
+-        for (int i = 0; i < 4; i++) j.crop[i] = crop[i];
+-    }
+-    vk_upload_flush(0);   // an upload vk_texture_get just recorded goes before the blit
++    if (crop) {
++        j.has_crop = 1;
++        int k = img->scale > 1 ? img->scale : 1;   // [arceus] render resolution: the game's crop is in its own texels
++        for (int i = 0; i < 4; i++) j.crop[i] = crop[i] * k;
++    }
++    vk_upload_flush(0);   // an upload vk_texture_get just recorded goes before the blit

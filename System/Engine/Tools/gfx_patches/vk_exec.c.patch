@@ -1,0 +1,40 @@
+--- generated/vk/vk_exec.c
++++ arceus/vk/vk_exec.c
+@@ -773,7 +773,7 @@
+     {
+         static int tc = -1, n;
+         if (tc < 0) { const char *e = getenv("SW_TRACE_CLEAR"); tc = e && *e == '1'; }
+-        if (tc && n < 200) { n++; rt_log("clear_ds: depth %g (raw %g) mask %d stencil %d/%#x target %ux%u nvn %#x",
++        if ((tc && n < 200) || (vk_exec_oq_counting() && vk_exec_oq_log_on() && n < 400)) { n++; rt_log("clear_ds: depth %g (raw %g) mask %d stencil %d/%#x target %ux%u nvn %#x",
+                                        (double)d, (double)c->depth, c->depth_mask, c->stencil, c->stencil_mask,
+                                        t->width, t->height, t->nvn_format); }
+     }
+@@ alpha ref op (arceus) @@
+-            const p_stencil *s = a;
+-            for (int f = 0; f < 2; f++) {
++            const p_stencil *s = a;
++            if (s->which == 3) {   // [arceus] nvnCommandBufferSetAlphaRef
++                memcpy(&ex->alpha_ref, &s->ref, 4);
++                break;
++            }
++            for (int f = 0; f < 2; f++) {
+@@ render resolution: a pass mixing scales falls back @@
+-    ex->pass_w = w, ex->pass_h = h, ex->pass_layers = layers;
+-    ex->pass_scale = ex->pass_noatt ? 1 : scale;
++    ex->pass_w = w, ex->pass_h = h, ex->pass_layers = layers;
++    ex->pass_scale = ex->pass_noatt ? 1 : scale;
++    if (scale > 1 && !ex->pass_noatt) {   // [arceus] render resolution: targets of another scale in the same pass
++        extern void vk_texture_res_fallback(const VkTexImage *img, const char *why);
++        extern int vk_texture_res_scaled(const VkTexImage *img);
++        int mixed = 0;
++        for (int i = 0; i < 8; i++)
++            if (ex->color[i].image && ex->color[i].scale != scale) mixed = 1;
++        if (d->image && d->scale != scale) mixed = 1;
++        if (mixed) {   // the scaled ones go back to the game's size; this pass draws at the game's size meanwhile
++            for (int i = 0; i < 8; i++)
++                if (ex->color[i].image && vk_texture_res_scaled(ex->color[i].img))
++                    vk_texture_res_fallback(ex->color[i].img, "a pass with targets of the game's size");
++            if (d->image && vk_texture_res_scaled(d->img)) vk_texture_res_fallback(d->img, "a pass with targets of the game's size");
++            ex->pass_scale = 1;
++        }
++    }

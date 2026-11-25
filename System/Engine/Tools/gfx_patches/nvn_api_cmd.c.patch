@@ -1,0 +1,19 @@
+--- generated/nvn_api_cmd.c
++++ arceus/nvn_api_cmd.c
+@@ alpha ref recorded (arceus) @@
+-NVN_API(nvnCommandBufferSetStencilRef) {
+-    *REC(cmd_of(c), OP_STENCIL, p_stencil) = (p_stencil){(int)arg_x(c, 1), 0, 0, (int)arg_x(c, 2), 2};
+-}
++NVN_API(nvnCommandBufferSetStencilRef) {
++    *REC(cmd_of(c), OP_STENCIL, p_stencil) = (p_stencil){(int)arg_x(c, 1), 0, 0, (int)arg_x(c, 2), 2};
++}
++// void nvnCommandBufferSetAlphaRef(NVNcommandBuffer *cmd, float ref): [arceus] the reference of the alpha test
++// (nvnColorStateSetAlphaTest), carried as OP_STENCIL which 3 (ref = the float's bits, no face); the replay writes it
++// into the support buffer's alpha_test word, which the translated fragment shaders compare against (build_xlate.py).
++// Legends: Arceus's UI uses it (ui2d alpha compare, GREATER): its battle style cut-in dissolves panels this way.
++NVN_API(nvnCommandBufferSetAlphaRef) {
++    float r = arg_s(c, 0);
++    int bits;
++    memcpy(&bits, &r, 4);
++    *REC(cmd_of(c), OP_STENCIL, p_stencil) = (p_stencil){0, 0, 0, bits, 3};
++}

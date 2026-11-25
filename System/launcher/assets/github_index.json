@@ -1,0 +1,388 @@
+{
+ "generated": "2026-11-25",
+ "title_id": "01001F5010DFA000",
+ "repos": [
+  {
+   "repo": "theboy181/switch-ptchtxt-mods",
+   "name": "theboy181 - pchtxt mods",
+   "commit": "f4e4c431bd91af791fa3d0773787129598a51587",
+   "files": 324,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods",
+   "name": "Fl4sh9174 - Ultrawide & FPS mods",
+   "commit": "b406f44cf2dcbd0bea1d763eb8737295496666d8",
+   "files": 119,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "ChanseyIsTheBest/NX-60FPS-RES-GFX-Cheats",
+   "name": "ChanseyIsTheBest - 60 FPS / resolution / graphics",
+   "commit": "a2755da3eea706734d459349370757fbe2375cfc",
+   "files": 1466,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "Kenji-NX/switch-pchtxt-mods",
+   "name": "Kenji-NX - pchtxt mods",
+   "commit": "13f0e6559136ead857e7c66d53f1ef1775d339f4",
+   "files": 621,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "yuzu-mirror/yuzu-mod-archive",
+   "name": "yuzu mod archive (mirror)",
+   "commit": "26fe6b257e61ac96edfc3ad5839f41727a7d70b5",
+   "files": 119,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "ADEMOLA200/Switch-Emulator-Mod-Database",
+   "name": "ADEMOLA200 - Switch mod database",
+   "commit": "abd55774c369b9c3a4df960e7afdb0391cb52056",
+   "files": 5413,
+   "mods": 5,
+   "ok": true
+  },
+  {
+   "repo": "wikid24/ryujinx-discord-mods-cheats",
+   "name": "Ryujinx Discord mods & cheats (mirror)",
+   "commit": "dcdadb534239ff1ab60cae82ca27542134f313af",
+   "files": 168,
+   "mods": 2,
+   "ok": true
+  },
+  {
+   "repo": "OldManKain/Switch-Cheats-Mods-Saves",
+   "name": "OldManKain - cheats, mods, saves",
+   "commit": "d751ec11e4db1afd0d89dc4f2787ba20454610d8",
+   "files": 2196,
+   "mods": 2,
+   "ok": true
+  },
+  {
+   "repo": "Koriebonx98/Game_OS.Mods.switch",
+   "name": "Game OS - Switch mods",
+   "commit": "affdc1c269990bdb8d950e57744db38b1f7ad539",
+   "files": 36,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "medinacristofer034-art/SwitchOptimizerMods",
+   "name": "Switch Optimizer Mods",
+   "commit": "690a692ec82c283ad1433dee06868f4b376b4dfc",
+   "files": 69,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "cdnutter/NX-Graphics-Patches",
+   "name": "cdnutter - graphics patches",
+   "commit": "dcb63205f0f176e2973e2aaec885c0ae38dd2a89",
+   "files": 14,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "whytecloud/switch-ultrawide-mods-pchtxt",
+   "name": "whytecloud - ultrawide pchtxt",
+   "commit": "5049b759d746d6fb3d33a9a0436432d5d8bcb1cd",
+   "files": 1,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "StevensND/switch-port-mods",
+   "name": "StevensND - port mods",
+   "commit": "d2e3f0e2499b2d21f336cc9cf5e2969ca4eecda1",
+   "files": 354,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "TLin-Y/Switch-Ultrawide-Mods",
+   "name": "TLin-Y - Ultrawide mods",
+   "commit": "a398d55b625129365a975c3ab0b9ef25012d5fff",
+   "files": 119,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "CharredPlatinum/Switch-Ultrawide-Mods",
+   "name": "CharredPlatinum - Ultrawide mods",
+   "commit": "5683a1cdd8021d6e837b9d6e3bb2a64cb486d19c",
+   "files": 106,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "ansongo/switch-ultrawide-mods",
+   "name": "ansongo - Ultrawide mods",
+   "commit": "7219c6cf71a20cde023a216badedc3d33b1df0da",
+   "files": 106,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "andercard0/Switch-Ultrawide-Mods",
+   "name": "andercard0 - Ultrawide mods",
+   "commit": "91db6081a9f6db633bfab9bec911fdb6571790c4",
+   "files": 119,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "New8ie/Switch-Ultrawide-Mods",
+   "name": "New8ie - Ultrawide mods",
+   "commit": "40815c3bc29836a0a89af627440eecbb53304d60",
+   "files": 109,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "Arch9SK7/MyNXCheats",
+   "name": "Arch9SK7 - cheats",
+   "commit": "04090eb3f6d9d7297672d53628766fd60c591d48",
+   "files": 182,
+   "mods": 1,
+   "ok": true
+  },
+  {
+   "repo": "Lyrx997/Switch-Cheats",
+   "name": "Lyrx997 - cheats",
+   "commit": "cda6f991f850c78273f2533e76a08217a469c71a",
+   "files": 45699,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "HamletDuFromage/switch-cheats-db",
+   "name": "switch-cheats-db (cheats)",
+   "commit": "4e19981a5c57aee3545ced66e158aa9e7fefa045",
+   "files": 26409,
+   "mods": 0,
+   "ok": true
+  },
+  {
+   "repo": "t0mtee/PCHTXT-Updates",
+   "name": "t0mtee - pchtxt updates",
+   "commit": "a695a237bea014bb9bdebdac4157a006866c3975",
+   "files": 16,
+   "mods": 0,
+   "ok": true
+  }
+ ],
+ "mods": [
+  {
+   "repo": "Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods",
+   "kind": "file",
+   "path": "Pokemon Legends Arceus [01001F5010DFA000][mods].zip",
+   "size": 0,
+   "sha": "9b0a45fa70fa30c9bbb9422a02ece514e3d75c57",
+   "version": ""
+  },
+  {
+   "repo": "ChanseyIsTheBest/NX-60FPS-RES-GFX-Cheats",
+   "kind": "folder",
+   "path": "titles/01001F5010DFA000",
+   "size": 0,
+   "sha": "659ea9007acdbdba5007478c697308a3ee0e3976",
+   "version": "",
+   "files": [
+    [
+     "Pokémon Legends Arceus.txt",
+     0
+    ],
+    [
+     "cheats/AEE8F150DDA1B5A8.txt",
+     0
+    ]
+   ]
+  },
+  {
+   "repo": "ADEMOLA200/Switch-Emulator-Mod-Database",
+   "kind": "file",
+   "path": "Mods/01001F5010DFA000/1.1.1/60FPS.zip",
+   "size": 0,
+   "sha": "09f804ff4d0fcc9591aaba871ae9b1cd9db2d82a",
+   "version": "1.1.1"
+  },
+  {
+   "repo": "ADEMOLA200/Switch-Emulator-Mod-Database",
+   "kind": "file",
+   "path": "Pokemon Legends Arceus [01001F5010DFA000][mods].zip",
+   "size": 0,
+   "sha": "129fda3dbac760642db62a0b2ff0ad9984986857",
+   "version": ""
+  },
+  {
+   "repo": "ADEMOLA200/Switch-Emulator-Mod-Database",
+   "kind": "folder",
+   "path": "NX-60FPS-RES-GFX-Cheats/titles/01001F5010DFA000",
+   "size": 0,
+   "sha": "659ea9007acdbdba5007478c697308a3ee0e3976",
+   "version": "",
+   "files": [
+    [
+     "Pokémon Legends Arceus.txt",
+     0
+    ],
+    [
+     "cheats/AEE8F150DDA1B5A8.txt",
+     0
+    ]
+   ]
+  },
+  {
+   "repo": "ADEMOLA200/Switch-Emulator-Mod-Database",
+   "kind": "folder",
+   "path": "Pokemon Legends Arceus v1.0.0 - 1.1.1 Cheats",
+   "size": 0,
+   "sha": "ecac96bd76ad2eee7d140af54b925e24e702486f",
+   "version": "1.1.1",
+   "files": [
+    [
+     "Cheats/1.0.0/atmosphere/contents/01001F5010DFA000/cheats/7FCAD279539DE183.txt",
+     0
+    ],
+    [
+     "Cheats/1.0.1/atmosphere/contents/01001F5010DFA000/cheats/5E42071600D2BF1D.txt",
+     0
+    ],
+    [
+     "Cheats/1.0.2/atmosphere/contents/01001F5010DFA000/cheats/BEF291F2639F7AFE.txt",
+     0
+    ],
+    [
+     "Cheats/1.1.0/atmosphere/contents/01001F5010DFA000/cheats/66F15C281EFA7ADD.txt",
+     0
+    ],
+    [
+     "Cheats/1.1.1/atmosphere/contents/01001F5010DFA000/cheats/AEE8F150DDA1B5A8.txt",
+     0
+    ]
+   ]
+  },
+  {
+   "repo": "ADEMOLA200/Switch-Emulator-Mod-Database",
+   "kind": "folder",
+   "path": "Titles/01001F5010DFA000",
+   "size": 0,
+   "sha": "81f4daf4d6c18bd9dd043d39f4ac2cc8f23be0f0",
+   "version": "",
+   "files": [
+    [
+     "cheats/AEE8F150DDA1B5A8.txt",
+     0
+    ],
+    [
+     "credits.txt",
+     0
+    ]
+   ]
+  },
+  {
+   "repo": "wikid24/ryujinx-discord-mods-cheats",
+   "kind": "file",
+   "path": "Pokémon Legends Arceus - 01001F5010DFA000 [1020353314497511525]/60FPS.zip",
+   "size": 0,
+   "sha": "09f804ff4d0fcc9591aaba871ae9b1cd9db2d82a",
+   "version": ""
+  },
+  {
+   "repo": "wikid24/ryujinx-discord-mods-cheats",
+   "kind": "file",
+   "path": "Pokémon Legends Arceus - 01001F5010DFA000 [1020353314497511525]/lod_wip_v26.zip",
+   "size": 0,
+   "sha": "3ba5ba27a0f903be22be2ea7632fc28c1926017b",
+   "version": ""
+  },
+  {
+   "repo": "OldManKain/Switch-Cheats-Mods-Saves",
+   "kind": "file",
+   "path": "Mods/01001F5010DFA000/1.1.1/60FPS.zip",
+   "size": 0,
+   "sha": "09f804ff4d0fcc9591aaba871ae9b1cd9db2d82a",
+   "version": "1.1.1"
+  },
+  {
+   "repo": "OldManKain/Switch-Cheats-Mods-Saves",
+   "kind": "folder",
+   "path": "Titles/01001F5010DFA000",
+   "size": 0,
+   "sha": "81f4daf4d6c18bd9dd043d39f4ac2cc8f23be0f0",
+   "version": "",
+   "files": [
+    [
+     "cheats/AEE8F150DDA1B5A8.txt",
+     0
+    ],
+    [
+     "credits.txt",
+     0
+    ]
+   ]
+  },
+  {
+   "repo": "TLin-Y/Switch-Ultrawide-Mods",
+   "kind": "file",
+   "path": "Pokemon Legends Arceus [01001F5010DFA000][mods].zip",
+   "size": 0,
+   "sha": "9b0a45fa70fa30c9bbb9422a02ece514e3d75c57",
+   "version": ""
+  },
+  {
+   "repo": "CharredPlatinum/Switch-Ultrawide-Mods",
+   "kind": "file",
+   "path": "Pokemon Legends Arceus [01001F5010DFA000][mods].zip",
+   "size": 0,
+   "sha": "129fda3dbac760642db62a0b2ff0ad9984986857",
+   "version": ""
+  },
+  {
+   "repo": "ansongo/switch-ultrawide-mods",
+   "kind": "file",
+   "path": "Pokemon Legends Arceus [01001F5010DFA000][mods].zip",
+   "size": 0,
+   "sha": "129fda3dbac760642db62a0b2ff0ad9984986857",
+   "version": ""
+  },
+  {
+   "repo": "andercard0/Switch-Ultrawide-Mods",
+   "kind": "file",
+   "path": "Pokemon Legends Arceus [01001F5010DFA000][mods].zip",
+   "size": 0,
+   "sha": "9b0a45fa70fa30c9bbb9422a02ece514e3d75c57",
+   "version": ""
+  },
+  {
+   "repo": "New8ie/Switch-Ultrawide-Mods",
+   "kind": "file",
+   "path": "Pokemon Legends Arceus [01001F5010DFA000][mods].zip",
+   "size": 0,
+   "sha": "129fda3dbac760642db62a0b2ff0ad9984986857",
+   "version": ""
+  },
+  {
+   "repo": "Arch9SK7/MyNXCheats",
+   "kind": "folder",
+   "path": "Pokemon Legends Arceus/01001F5010DFA000",
+   "size": 0,
+   "sha": "bddd9e00d2c8da41d3ca9d485543322e6b4e48a4",
+   "version": "",
+   "files": [
+    [
+     "cheats/AEE8F150DDA1B5A8.txt",
+     0
+    ]
+   ]
+  }
+ ]
+}

@@ -1,0 +1,8 @@
+--- generated/gfx.h
++++ arceus/gfx.h
+@@ alpha test answer (arceus) @@
+-    uint16_t local[3]; uint32_t shared_bytes;
++    uint16_t local[3];
++    uint8_t alpha_func;                                    // [arceus] FS: NVNalphaFunc of the alpha test, 0 none
++                                                           // (ALWAYS); in the padding, the size stays (.in files)
++    uint32_t shared_bytes;

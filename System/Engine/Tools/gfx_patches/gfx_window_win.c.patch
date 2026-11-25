@@ -1,0 +1,23 @@
+--- generated/vk/gfx_window_win.c
++++ arceus/vk/gfx_window_win.c
+@@ background test window off-screen @@
+-    g_hwnd = CreateWindowExW(0, wc.lpszClassName, L"LodeStar", WND_STYLE, CW_USEDEFAULT, CW_USEDEFAULT, ow, oh, NULL,
+-                             NULL, inst, NULL);
++    // [arceus] Background test runs open off-screen, never take the focus and have no taskbar button, so a test
++    // started while the user plays does not cover the game.
++    g_hwnd = CreateWindowExW(background ? WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE : 0, wc.lpszClassName,
++                             L"LodeStar", WND_STYLE, background ? -32000 : CW_USEDEFAULT,
++                             background ? -32000 : CW_USEDEFAULT, ow, oh, NULL, NULL, inst, NULL);
+@@ background window never fullscreen @@
+-static void toggle_fullscreen(HWND h) {
+-    LONG style = GetWindowLongW(h, GWL_STYLE);
++static void toggle_fullscreen(HWND h) {
++    if (g_background) return;   // [arceus] a test run's window stays off-screen (the saved fullscreen setting too)
++    LONG style = GetWindowLongW(h, GWL_STYLE);
+@@ background window past the monitors @@
+-                             L"LodeStar", WND_STYLE, background ? -32000 : CW_USEDEFAULT,
+-                             background ? -32000 : CW_USEDEFAULT, ow, oh, NULL, NULL, inst, NULL);
++                             L"LodeStar", WND_STYLE,
++                             background ? GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN) + 64
++                                        : CW_USEDEFAULT,
++                             background ? GetSystemMetrics(SM_YVIRTUALSCREEN) : CW_USEDEFAULT, ow, oh, NULL, NULL, inst, NULL);

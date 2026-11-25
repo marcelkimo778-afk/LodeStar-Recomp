@@ -1,0 +1,26 @@
+--- generated/vk/gfx_shader.c
++++ arceus/vk/gfx_shader.c
+@@ alpha test in the answers hash (arceus) @@
+-    *p++ = (uint8_t)(a->depth_minus_w | (a->mvprev ? 0x80 : 0));
+-    return (size_t)(p - o);
+-}
++    *p++ = (uint8_t)(a->depth_minus_w | (a->mvprev ? 0x80 : 0));
++    if (a->alpha_func) *p++ = (uint8_t)(0xa0 | a->alpha_func);   // [arceus] only when set: other keys stay as they were
++    return (size_t)(p - o);
++}
+@@ alpha test kept by the mask (arceus) @@
+-    o->mvprev = a->mvprev;   // another translation, not an answer the use mask covers
++    o->mvprev = a->mvprev;   // another translation, not an answer the use mask covers
++    o->alpha_func = a->alpha_func;   // [arceus] likewise: the alpha test is another translation
+@@ alpha test in the job (arceus) @@
+-    if (a && a->mvprev && !strcmp(stage, "vs")) o += sprintf(o, ",\"mvprev\":true");
++    if (a && a->mvprev && !strcmp(stage, "vs")) o += sprintf(o, ",\"mvprev\":true");
++    if (a && a->alpha_func && !strcmp(stage, "ps")) o += sprintf(o, ",\"alpha_func\":%u", a->alpha_func);   // [arceus]
+@@ answers record without the alpha byte (arceus) @@
+-        pack_answers(rec + 68, a);
++        {   // [arceus] the record has room for the fixed layout only (ANS_PACKED): the alpha test is left out
++            GfxShaderAnswers t = {0};
++            if (a) t = *a;
++            t.alpha_func = 0;
++            pack_answers(rec + 68, &t);
++        }

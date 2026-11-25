@@ -1,0 +1,13 @@
+--- generated/vk/vk_exec.h
++++ arceus/vk/vk_exec.h
+@@ -207,3 +207,6 @@
+ // when counting and none is active), and the open pass about to end (ends the active query).
+ void vk_exec_oq_draw(VkExec *ex);
+ void vk_exec_oq_pass_end(VkExec *ex);
++int vk_exec_oq_counting(void);   // [arceus] SW_OQ_LOG debugging
++int vk_exec_oq_log_on(void);
++int vk_exec_oq_window(void);
+@@ alpha ref state (arceus) @@
+-    uint32_t st_vmask[2], st_wmask[2], st_ref[2];   // OP_STENCIL per face (0 front, 1 back): compare mask, write mask, ref
++    uint32_t st_vmask[2], st_wmask[2], st_ref[2];   // OP_STENCIL per face (0 front, 1 back): compare mask, write mask, ref
++    float alpha_ref;                     // [arceus] OP_STENCIL which 3: nvnCommandBufferSetAlphaRef (support buffer word 0)

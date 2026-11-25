@@ -1,0 +1,55 @@
+#version 450
+// Block matching at one pyramid level: s0 = current luma, s1 = previous luma, s2 = coarser flow (prior, filtered).
+// The flow F (in full-picture pixels) says where a pixel of the current frame was in the previous one:
+// cur(p) ~ prev(p - F). Candidates: a search around the prior and the priors beside it; the cost is the 5x5 sum of
+// differences plus a penalty for leaving the prior, so flat areas (sky) follow their neighbours instead of noise.
+// The zero vector is preferred (HUD, still scenery).
+#include "fg_common.glsl"
+vec2 texel;
+float sad(vec2 uv, vec2 v) {
+    float c = 0.0;
+    for (int y = -2; y <= 2; y++)
+        for (int x = -2; x <= 2; x++) {
+            vec2 o = vec2(x, y) * texel;
+            c += abs(textureLod(s0, uv + o, 0.0).r - textureLod(s1, uv + o - v * texel, 0.0).r);
+        }
+    return c;
+}
+void main() {
+    ivec2 q = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(q, pc.size))) return;
+    texel = 1.0 / vec2(pc.size);
+    vec2 uv = (vec2(q) + 0.5) * texel;
+    float fs = float(pc.full.x) / float(pc.size.x);             // full-picture pixels per level pixel
+    bool prior = pc.prior > 0.5;
+    vec2 v0 = prior ? textureLod(s2, uv, 0.0).xy / fs : vec2(0.0);
+    float lam = prior ? 0.03 : 0.006;
+    vec2 best = vec2(0.0);
+    float bc = sad(uv, vec2(0.0)) * 0.92 + lam * length(v0);
+    // the priors around this texel (another object's motion reaching over an edge)
+    if (prior)
+        for (int i = 0; i < 4; i++) {
+            vec2 o = vec2(i == 0 ? -3 : i == 1 ? 3 : 0, i == 2 ? -3 : i == 3 ? 3 : 0) * texel;
+            vec2 v = round(textureLod(s2, uv + o, 0.0).xy / fs);
+            float c = sad(uv, v) + lam * length(v - v0);
+            if (c < bc) { bc = c; best = v; }
+        }
+    vec2 c0 = round(v0);
+    int r = int(pc.radius);
+    for (int dy = -r; dy <= r; dy++)
+        for (int dx = -r; dx <= r; dx++) {
+            vec2 v = c0 + vec2(dx, dy);
+            float c = sad(uv, v) + lam * length(v - v0);
+            if (c < bc) { bc = c; best = v; }
+        }
+    // sub-pixel: a parabola through the costs beside the best vector
+    if (best != vec2(0.0)) {
+        float cc = sad(uv, best);
+        float cx0 = sad(uv, best - vec2(1, 0)), cx1 = sad(uv, best + vec2(1, 0));
+        float cy0 = sad(uv, best - vec2(0, 1)), cy1 = sad(uv, best + vec2(0, 1));
+        float dx = cx0 + cx1 - 2.0 * cc, dy = cy0 + cy1 - 2.0 * cc;
+        if (dx > 1e-5) best.x += clamp(0.5 * (cx0 - cx1) / dx, -0.5, 0.5);
+        if (dy > 1e-5) best.y += clamp(0.5 * (cy0 - cy1) / dy, -0.5, 0.5);
+    }
+    imageStore(dst, q, vec4(best * fs, bc, 1.0));
+}

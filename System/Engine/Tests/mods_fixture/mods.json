@@ -1,0 +1,11 @@
+{
+  // Engine/Tests/test_mods.c config
+  "enabled": true,
+  "search_default_dirs": false,
+  "mods": [
+    "ModBeta",
+    {"name": "ModAlpha", "enabled": true},
+    {"name": "ModOff", "enabled": true}
+  ],
+  "cheats": {"ModBeta": ["Set Money", "Code Cheat", "Loop Fill", "Key Cheat", "Cond", "Broken"]}
+}

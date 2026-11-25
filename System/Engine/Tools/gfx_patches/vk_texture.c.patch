@@ -1,0 +1,321 @@
+--- generated/vk/vk_texture.c
++++ arceus/vk/vk_texture.c
+@@ -350,2 +350,20 @@
+     int scale = shadow_scale_of(d, &f, d->samples > 1 ? (uint32_t)d->samples : 1, tex_mirrored(t));
+     w *= (uint32_t)scale, h *= (uint32_t)scale;
++    {   // [arceus] SW_TEX_LOG=1: each distinct depth texture and large (>= 512 wide) texture once - which sizes the
++        // game renders at (resolution) and which textures are its shadow maps.  Off: one load.
++        static int on = -1;
++        static uint64_t seen[1024];
++        static int nseen;
++        if (on < 0) { const char *e = getenv("SW_TEX_LOG"); on = e && *e == '1'; }
++        if (on && nseen < 1024 && (f.depth || d->width >= 512)) {
++            uint64_t key = ((uint64_t)d->format << 48) ^ ((uint64_t)d->target << 44) ^ ((uint64_t)d->width << 22) ^
++                           (uint64_t)d->height ^ ((uint64_t)d->depth << 58) ^ ((uint64_t)d->samples << 40);
++            int dup = 0;
++            for (int i = 0; i < nseen && !dup; i++) dup = seen[i] == key;
++            if (!dup) {
++                seen[nseen++] = key;
++                rt_log("[tex] fmt %#x target %d %ux%u depth %u levels %u samples %d depth %d mirrored %d scale %d",
++                       (unsigned)d->format, (int)d->target, d->width, d->height, d->depth, d->levels, (int)d->samples,
++                       (int)f.depth, tex_mirrored(t), scale);
++            }
++        }
++    }
+@@ -317,1 +317,6 @@
+-    if (scale == 1 || mirrored || samples > 1 || d->format != NVN_FORMAT_DEPTH16 || !f->depth) return 1;
++    // [arceus] Legends: Arceus' sun shadow cascades are a DEPTH32F 2D array (1024x1024, 2 layers); TotK's are DEPTH16.
++    // Its shadow pass also renders into an R8UI 2D array of the same shape (a colour attachment beside the depth):
++    // that one is made larger too, or the pass area stays at the smaller attachment's size while the viewports grow
++    // (only a quarter of the map drawn, shadows gone - seen 2026-11-19).
++    int depth_map = (d->format == NVN_FORMAT_DEPTH16 || d->format == NVN_FORMAT_DEPTH32F) && f->depth;
++    if (scale == 1 || mirrored || samples > 1 || (!depth_map && d->format != NVN_FORMAT_R8UI)) return 1;
+@@ -691,6 +691,7 @@ static void upload(Tex *e) {
+     const nvn_texdesc *d = &t->d;
+     int bw, bh, bpb = nvn_fmt_bpb(d->format, &bw, &bh);
+     if (!bpb || !t->mem) return;
++    { extern void sw_tex_up_note(uint64_t bytes); sw_tex_up_note(t->L.size); }   // [arceus] SW_THUNK_SLOW counts
+     uint64_t p0 = perf_begin(), u0 = kern_now_ns();
+     int linear = nvn_tex_is_linear(d), is3d = d->target == NVN_TEXTURE_TARGET_3D, one_d = e->pub.type == VK_IMAGE_TYPE_1D;
+     uint32_t levels = linear ? 1 : e->pub.levels, layers = linear ? 1 : e->pub.layers;
+@@ -1048,7 +1049,18 @@ void vk_texture_gpu_written(const tex_t *t) {
+         if (f > e->wr_fence) e->wr_fence = f;
+         if (e->pub.mirrored) {
+             e->gpu_dirty = 1;
+-            storage_rewritten(e, 0, &e->gpu_gen);   // CPU writes up to here are older than this render
++            // CPU writes up to here are older than this render. [arceus] From this submission's write-watch snapshot
++            // (one query per 2 MiB region and submission) instead of a system call per render target and pass: on
++            // the village route that was ~6.5% of the render thread. A CPU write into a render target's storage during
++            // this replay (games do not) would get a newer generation and skip the write-back. SW_WB_SNAP=1 turns it on (2026-11-16: no measurable gain on the village route at 120).
++            static int wb_snap = -1;
++            if (wb_snap < 0) { const char *ws = getenv("SW_WB_SNAP"); wb_snap = ws && *ws == '1'; }   /* off by default: no gain measured */
++            if (wb_snap) {
++                uint64_t lo = (e->pub.addr + 0xfff) & ~0xfffull, hi = (e->pub.addr + e->t.L.size) & ~0xfffull;
++                if (hi <= lo) lo = e->pub.addr, hi = e->pub.addr + e->t.L.size;
++                vk_mem_changed_snap(lo, hi - lo, 0, submit_epoch, &e->gpu_gen);
++            } else
++                storage_rewritten(e, 0, &e->gpu_gen);
+             if (wb_exact < 0) wb_exact = cfg_bool("TOTK_WB_EXACT");
+             if (wb_exact && !e->snap && e->t.L.size <= SNAP_MAX && fills_no_page(e) && !(e->snap = malloc(SNAP_MAX)))
+                 rt_fatal("vk: out of memory for a texture's storage copy");
+@@ shadow scale live @@
+-static int shadow_scale(void) {
+-    static int scale = -1;
+-    if (scale < 0) {
+-        int s = cfg_int("TOTK_SHADOW_SCALE");
+-        s = s < 1 ? 1 : s > 4 ? 4 : s;
+-        rt_log("vk: shadow map scale %d", s);
+-        scale = s;
+-    }
+-    return scale;
+-}
++// [arceus] The size can change while the game runs (in-game menu, vk_texture_shadow_set): the new size is taken at
++// the start of the next queue submit (shadow_apply), where the maps of the old size are dropped and made again at the
++// new one. The game redraws its cascades every frame, so at most a frame or two shows no sun shadows.
++static int shadow_applied = -1;          // the size maps are made at now
++static volatile int shadow_wanted;       // 0, or a size asked for (applied at the next submit)
++static int shadow_scale(void) {
++    if (shadow_applied < 0) {
++        int s = cfg_int("TOTK_SHADOW_SCALE");
++        s = s < 1 ? 1 : s > 4 ? 4 : s;
++        rt_log("vk: shadow map scale %d", s);
++        shadow_applied = s;
++    }
++    return shadow_applied;
++}
++int vk_texture_shadow_scale(void) { return shadow_scale(); }   // vk_exec_draw.c shadow_spread_params
++void vk_texture_shadow_set(int s) {                            // sw_romfs.c sw_shadow_set
++    s = s < 1 ? 1 : s > 4 ? 4 : s;
++    __atomic_store_n(&shadow_wanted, s, __ATOMIC_RELEASE);
++}
+@@ shadow apply at submit @@
+-void vk_texture_new_submit(void) {
+-    lock();
+-    if (!++submit_epoch) submit_epoch = 1;
+-    sweep_pressure();
++// [arceus] A new shadow size (vk_texture_shadow_set): drop every image whose size the new scale changes (the sun
++// cascades and their R8UI companion); they are made again at the new size when the game next uses them. Compare
++// samplers are looked up again (sampler_for: linear at a scale above 1). tex_lock held, between submits.
++static void shadow_apply(void) {
++    int want = __atomic_load_n(&shadow_wanted, __ATOMIC_ACQUIRE);
++    if (!want || want == shadow_scale()) return;
++    int old = shadow_applied;
++    shadow_applied = want;
++    Tex **list = malloc(sizeof *list * (size_t)(by_key.n + 1));
++    if (!list) return;
++    int n = 0;
++    for (uint32_t i = 0; i < by_key.cap; i++) {
++        Tex *e = by_key.vals[i];
++        if (!e) continue;
++        int have = e->pub.scale > 1 ? e->pub.scale : 1;
++        int now = shadow_scale_of(&e->t.d, &e->f, e->t.d.samples > 1 ? (uint32_t)e->t.d.samples : 1, e->pub.mirrored);
++        if (now != have) list[n++] = e;
++    }
++    for (int i = 0; i < n; i++) destroy_tex(list[i]);
++    free(list);
++    for (int i = 0; i < nsslots; i++) sslots[i].s = sslots[i].sp = VK_NULL_HANDLE;
++    samp_gen++;
++    rt_log("vk: shadow map scale %d -> %d (%d images made again)", old, want, n);
++}
++
++void vk_texture_new_submit(void) {
++    lock();
++    if (!++submit_epoch) submit_epoch = 1;
++    sweep_pressure();
++    shadow_apply();
+@@ compare sampler filter in key @@
+-    if (dlss_bias != 0 && dlss_biased(&k)) k.lod_bias += dlss_bias;   // part of the key: samplers live until shutdown
++    if (dlss_bias != 0 && dlss_biased(&k)) k.lod_bias += dlss_bias;   // part of the key: samplers live until shutdown
++    if (k.cmp_mode && shadow_scale() > 1) {   // [arceus] make_sampler's linear compare, in the key (the scale can change)
++        k.magf = NVN_MAG_FILTER_LINEAR;
++        if (k.minf <= NVN_MIN_FILTER_LINEAR_MIPMAP_LINEAR) k.minf |= 1;
++    }
+@@ shadow test switch @@
+-static void shadow_apply(void) {
+-    int want = __atomic_load_n(&shadow_wanted, __ATOMIC_ACQUIRE);
++static void shadow_apply(void) {
++    {   // SW_SHADOW_AT=<frame>:<scale>[,...]: test switch - a size change at those frames, as the in-game menu makes
++        static const char *at = (const char *)1;
++        if (at == (const char *)1) at = getenv("SW_SHADOW_AT");
++        unsigned long long f;
++        int s, used;
++        if (at && *at && sscanf(at, "%llu:%d%n", &f, &s, &used) == 2 &&
++            __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED) >= f) {
++            vk_texture_shadow_set(s);
++            at += used;
++            if (*at == ',') at++;
++        }
++    }
++    int want = __atomic_load_n(&shadow_wanted, __ATOMIC_ACQUIRE);
+@@ live anisotropy state @@
+-static struct { int init, mirror_clamp_edge, minmax, border_no_format; float aniso; } sf;   // aniso: TOTK_ANISO, 0 = the game's
++static struct { int init, mirror_clamp_edge, minmax, border_no_format; float aniso; } sf;   // aniso: TOTK_ANISO, 0 = the game's
++// [arceus] anisotropic filtering chosen while the game runs (vk_sampler_aniso_set, in-game menu): -1 = TOTK_ANISO.
++// It is part of the sampler key (sampler_for raises samp_par.aniso), so a change makes new samplers at once.
++static float aniso_live = -1;
+@@ live anisotropy replaces TOTK_ANISO @@
+-    if (sf.aniso > aniso && tiled && !d->cmp_mode && si.magFilter == VK_FILTER_LINEAR && si.minFilter == VK_FILTER_LINEAR &&
++    if (aniso_live < 0 && sf.aniso > aniso && tiled && !d->cmp_mode && si.magFilter == VK_FILTER_LINEAR && si.minFilter == VK_FILTER_LINEAR &&
+@@ live anisotropy in sampler key @@
+-    if (dlss_bias != 0 && dlss_biased(&k)) k.lod_bias += dlss_bias;   // part of the key: samplers live until shutdown
++    if (dlss_bias != 0 && dlss_biased(&k)) k.lod_bias += dlss_bias;   // part of the key: samplers live until shutdown
++    if (aniso_live > k.aniso && !k.cmp_mode && k.magf == NVN_MAG_FILTER_LINEAR &&   // [arceus] live level, make_sampler's rule
++        (k.minf == NVN_MIN_FILTER_LINEAR_MIPMAP_NEAREST || k.minf == NVN_MIN_FILTER_LINEAR_MIPMAP_LINEAR) &&
++        (k.ws == NVN_WRAP_MODE_REPEAT || k.ws == NVN_WRAP_MODE_MIRRORED_REPEAT) &&
++        (k.wt == NVN_WRAP_MODE_REPEAT || k.wt == NVN_WRAP_MODE_MIRRORED_REPEAT))
++        k.aniso = aniso_live;
+@@ live anisotropy setter @@
+-// Caller holds the lock.
+-static VkSampler sampler_for(VkCtx *c, const samp_par *s) {
++// [arceus] in-game menu: 0 = the game's level, 2..16 = that level for the tiling surface textures; applies at once
++void vk_sampler_aniso_set(float a) {
++    lock();
++    if (a != aniso_live) {
++        aniso_live = a;
++        for (int i = 0; i < nsslots; i++) sslots[i].s = sslots[i].sp = VK_NULL_HANDLE;   // looked up again (the key moves)
++        samp_gen++;
++    }
++    unlock();
++}
++
++// Caller holds the lock.
++static VkSampler sampler_for(VkCtx *c, const samp_par *s) {
+@@ render resolution: Tex flag @@
+-    struct Tex *rel_prev, *rel_next;   // while released: the list of released entries, oldest first
+-} Tex;
++    struct Tex *rel_prev, *rel_next;   // while released: the list of released entries, oldest first
++    uint8_t res_scaled;           // [arceus] a screen-sized render target made SW_RES_SCALE times larger (img_scale_of)
++} Tex;
+@@ render resolution: scale rule and fallback list @@
+-static int shadow_scale_of(const nvn_texdesc *d, const TexVkFormat *f, uint32_t samples, int mirrored) {
++// [arceus] Render resolution (SW_RES_SCALE / TOTK_RES_SCALE 1..4, read at start): the game's screen-sized render
++// targets - 2D, one level, one sample, 16:9 (1920x1080, 960x540, 480x270 docked; 1280x720 and its halves handheld),
++// not written by the CPU - are made that many times larger, as the shadow maps are: passes scale the game's viewports
++// and scissors (pass_scale), copies their regions (vk_exec_xfer.c sub_resolve), and the translated shaders get each
++// bound texture's scale in the support buffer's RenderScale array (vk_exec_draw.c rs_compute: Ryujinx's FragCoord,
++// texelFetch and textureSize scaling). A target that is used in a way that cannot follow - bound as a storage image,
++// read or written by the CPU, a pass that mixes it with unscaled targets, a copy to a buffer - goes on the fallback
++// list (vk_texture_res_fallback): it is made again at the game's size at the next submit and stays so (one frame of
++// its old contents is lost, like a shadow size change).
++static int res_scale_v = -1;
++static int res_scale(void) {
++    if (res_scale_v < 0) {
++        int s = cfg_int("TOTK_RES_SCALE");
++        res_scale_v = s < 1 ? 1 : s > 4 ? 4 : s;
++        if (res_scale_v > 1) rt_log("vk: render resolution %dx (screen-sized targets)", res_scale_v);
++    }
++    return res_scale_v;
++}
++int vk_texture_res_scale(void) { return res_scale(); }
++#define RES_FB_N 1024
++static struct { uint64_t addr; uint32_t w, h, fmt; } res_fb[RES_FB_N];   // the fallback list, texture lock held
++static int res_nfb;
++static int res_fb_dirty;   // entries added since the last submit (res images to make again)
++static int res_fallen(uint64_t addr, const nvn_texdesc *d) {
++    for (int i = 0; i < res_nfb; i++)
++        if (res_fb[i].addr == addr && res_fb[i].w == d->width && res_fb[i].h == d->height && res_fb[i].fmt == d->format)
++            return 1;
++    return 0;
++}
++static int res_scale_of(uint64_t addr, const nvn_texdesc *d, uint32_t samples, int mirrored) {
++    int s = res_scale();
++    if (s == 1 || mirrored || samples > 1 || d->target != NVN_TEXTURE_TARGET_2D || d->levels > 1 || d->width < 64 ||
++        (uint64_t)d->width * 9 != (uint64_t)d->height * 16)
++        return 1;
++    if (d->width * (uint32_t)s > vk_ctx()->props.limits.maxImageDimension2D || res_fallen(addr, d)) return 1;
++    return s;
++}
++static void res_fallback_locked(Tex *e, const char *why) {
++    if (!e->res_scaled || res_fallen(e->key.addr, &e->t.d)) return;
++    if (res_nfb < RES_FB_N) {
++        res_fb[res_nfb].addr = e->key.addr, res_fb[res_nfb].w = e->t.d.width, res_fb[res_nfb].h = e->t.d.height;
++        res_fb[res_nfb].fmt = e->t.d.format;
++        res_nfb++;
++    }
++    res_fb_dirty = 1;
++    rt_log("vk: render resolution: %ux%u format %#x at %#llx back to the game's size (%s)", e->t.d.width, e->t.d.height,
++           (unsigned)e->t.d.format, (unsigned long long)e->key.addr, why);
++}
++static void lock(void);
++static void unlock(void);
++void vk_texture_res_fallback(const VkTexImage *img, const char *why) {
++    if (!img || !((const Tex *)img)->res_scaled) return;
++    lock();
++    res_fallback_locked((Tex *)img, why);   // pub is the first member
++    unlock();
++}
++int vk_texture_res_scaled(const VkTexImage *img) { return img && ((const Tex *)img)->res_scaled; }
++
++static int shadow_scale_of(const nvn_texdesc *d, const TexVkFormat *f, uint32_t samples, int mirrored) {
+@@ render resolution: create_tex scale @@
+-    int scale = shadow_scale_of(d, &f, d->samples > 1 ? (uint32_t)d->samples : 1, tex_mirrored(t));
+-    w *= (uint32_t)scale, h *= (uint32_t)scale;
++    int scale = shadow_scale_of(d, &f, d->samples > 1 ? (uint32_t)d->samples : 1, tex_mirrored(t));
++    int res_scaled = 0;
++    if (scale == 1) {   // [arceus] render resolution
++        scale = res_scale_of(k->addr, d, d->samples > 1 ? (uint32_t)d->samples : 1, tex_mirrored(t));
++        res_scaled = scale > 1;
++    }
++    w *= (uint32_t)scale, h *= (uint32_t)scale;
+@@ render resolution: remember the flag @@
+-    p->scale = (uint8_t)scale;
++    p->scale = (uint8_t)scale;
++    e->res_scaled = (uint8_t)res_scaled;
+@@ render resolution: fallbacks made again at submit @@
+-    int want = __atomic_load_n(&shadow_wanted, __ATOMIC_ACQUIRE);
+-    if (!want || want == shadow_scale()) return;
+-    int old = shadow_applied;
+-    shadow_applied = want;
++    int want = __atomic_load_n(&shadow_wanted, __ATOMIC_ACQUIRE);
++    int fb = res_fb_dirty;   // [arceus] render targets put on the fallback list since the last submit
++    if ((!want || want == shadow_scale()) && !fb) return;
++    res_fb_dirty = 0;
++    int old = shadow_applied;
++    if (want && want != shadow_scale()) shadow_applied = want;
++    else want = old;
+@@ render resolution: compare with the fallback list @@
+-        int have = e->pub.scale > 1 ? e->pub.scale : 1;
+-        int now = shadow_scale_of(&e->t.d, &e->f, e->t.d.samples > 1 ? (uint32_t)e->t.d.samples : 1, e->pub.mirrored);
+-        if (now != have) list[n++] = e;
++        int have = e->pub.scale > 1 ? e->pub.scale : 1;
++        int now = shadow_scale_of(&e->t.d, &e->f, e->t.d.samples > 1 ? (uint32_t)e->t.d.samples : 1, e->pub.mirrored);
++        if (e->res_scaled) now = res_scale_of(e->key.addr, &e->t.d, e->t.d.samples > 1 ? (uint32_t)e->t.d.samples : 1,
++                                              e->pub.mirrored);
++        if (now != have) list[n++] = e;
+@@ render resolution: storage binding falls back @@
+-void vk_texture_storage_bound_locked(const VkTexImage *img) {
+-    Tex *e = (Tex *)img;   // pub is the first member
++void vk_texture_storage_bound_locked(const VkTexImage *img) {
++    Tex *e = (Tex *)img;   // pub is the first member
++    if (e->res_scaled) res_fallback_locked(e, "bound as a storage image");   // [arceus] render resolution
+@@ render resolution: CPU texel access falls back @@
+-static int image_texels(Tex *e, const Region *g, const NVNcopyRegion *r, uint8_t *mem, int write) {
+-    static volatile int32_t n_astc, n_ds;
++static int image_texels(Tex *e, const Region *g, const NVNcopyRegion *r, uint8_t *mem, int write) {
++    static volatile int32_t n_astc, n_ds;
++    if (e->res_scaled) res_fallback_locked(e, write ? "WriteTexels" : "ReadTexels");   // [arceus] render resolution
+@@ render resolution: live change @@
+-int vk_texture_res_scale(void) { return res_scale(); }
++int vk_texture_res_scale(void) { return res_scale(); }
++static volatile int res_wanted;   // 0, or a scale asked for while the game runs (applied at the next submit)
++void vk_texture_res_set(int s) {   // sw_menu.c sw_res_set (in-game menu)
++    s = s < 1 ? 1 : s > 4 ? 4 : s;
++    __atomic_store_n(&res_wanted, s, __ATOMIC_RELEASE);
++}
+@@ render resolution: live change at submit @@
+-    int fb = res_fb_dirty;   // [arceus] render targets put on the fallback list since the last submit
+-    if ((!want || want == shadow_scale()) && !fb) return;
+-    res_fb_dirty = 0;
++    int fb = res_fb_dirty;   // [arceus] render targets put on the fallback list since the last submit
++    int rw = __atomic_load_n(&res_wanted, __ATOMIC_ACQUIRE), rchange = rw && rw != res_scale();
++    if ((!want || want == shadow_scale()) && !fb && !rchange) return;
++    res_fb_dirty = 0;
++    if (rchange) {
++        rt_log("vk: render resolution %dx -> %dx", res_scale(), rw);
++        res_scale_v = rw;
++    }
+@@ render resolution: every screen target compared @@
+-        if (e->res_scaled) now = res_scale_of(e->key.addr, &e->t.d, e->t.d.samples > 1 ? (uint32_t)e->t.d.samples : 1,
+-                                              e->pub.mirrored);
++        if (now == 1) now = res_scale_of(e->key.addr, &e->t.d, e->t.d.samples > 1 ? (uint32_t)e->t.d.samples : 1,
++                                         e->pub.mirrored);

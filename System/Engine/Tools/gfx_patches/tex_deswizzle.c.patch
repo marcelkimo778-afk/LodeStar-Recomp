@@ -1,0 +1,80 @@
+--- generated/vk/tex_deswizzle.c
++++ arceus/vk/tex_deswizzle.c
+@@ -12,6 +12,7 @@
+ // addressing inside a level and the copy.
+ #include "tex.h"
+ #include <string.h>
++#include <stdlib.h>   /* [arceus] getenv, atoi */
+ 
+ static uint32_t gob_off(uint32_t x, uint32_t y) {
+     return (x % 64 / 32) * 256 + (y % 8 / 2) * 64 + (x % 32 / 16) * 32 + (y % 2) * 16 + x % 16;
+@@ -50,12 +51,68 @@ int nvn_deswizzle_geom(const nvn_texdesc *d, unsigned level, unsigned layer,
+ 
+ // nvn_bl_offset per row instead of per 16 bytes: within a row, GOB column k starts k blocks further, and the four
+ // 16-byte segments of a GOB row (x % 64 = 0, 16, 32, 48) sit at 0, 32, 256 and 288 of it.
++static void bl_rows(uint8_t *bl, uint8_t *lin, size_t pitch, uint32_t row_bytes, uint32_t rows, uint32_t slices,
++                    unsigned th, unsigned td, int to_linear, uint32_t y0, uint32_t y1);
++
++#ifdef _WIN32
++// [arceus] Large block-linear copies run in row bands on the Windows thread pool (2026-11-16): a texture's upload
++// deswizzled every row on the render thread, ~70 ms of the hitch when an area streams in (PokeL-ARecomp does the same
++// with up to 8 threads). Rows are independent. SW_DESWIZZLE_THREADS=1 keeps one thread.
++#include <windows.h>
++typedef struct {
++    uint8_t *bl, *lin; size_t pitch; uint32_t row_bytes, rows, slices, y0, y1; unsigned th, td; int to_linear;
++} BlBand;
++static VOID CALLBACK bl_band_cb(PTP_CALLBACK_INSTANCE inst, PVOID ctx, PTP_WORK work) {
++    (void)inst, (void)work;
++    BlBand *b = (BlBand *)ctx;
++    bl_rows(b->bl, b->lin, b->pitch, b->row_bytes, b->rows, b->slices, b->th, b->td, b->to_linear, b->y0, b->y1);
++}
++static int bl_threads(void) {
++    static int n = -1;
++    if (n < 0) {
++        const char *e = getenv("SW_DESWIZZLE_THREADS");
++        SYSTEM_INFO si; GetSystemInfo(&si);
++        n = e && atoi(e) > 0 ? atoi(e) : (int)(si.dwNumberOfProcessors / 2 > 8 ? 8 : si.dwNumberOfProcessors / 2);
++        if (n < 1) n = 1;
++    }
++    return n;
++}
++#endif
++
+ void tex_bl_copy(uint8_t *bl, uint8_t *lin, size_t pitch, uint32_t row_bytes, uint32_t rows, uint32_t slices,
+                  unsigned th, unsigned td, int to_linear) {
++#ifdef _WIN32
++    int nt = bl_threads();
++    if (nt > 1 && (uint64_t)row_bytes * rows * slices >= (1u << 20) && rows >= 64) {
++        if (nt > 8) nt = 8;
++        BlBand band[8];
++        PTP_WORK work[8] = {0};
++        uint32_t per = (rows + (uint32_t)nt - 1) / (uint32_t)nt;
++        int used = 0;
++        for (int i = 0; i < nt; i++) {
++            uint32_t y0 = (uint32_t)i * per, y1 = y0 + per > rows ? rows : y0 + per;
++            if (y0 >= y1) break;
++            band[i] = (BlBand){bl, lin, pitch, row_bytes, rows, slices, y0, y1, th, td, to_linear};
++            used = i + 1;
++        }
++        for (int i = 1; i < used; i++)
++            if ((work[i] = CreateThreadpoolWork(bl_band_cb, &band[i], NULL)) != NULL) SubmitThreadpoolWork(work[i]);
++            else bl_band_cb(NULL, &band[i], NULL);   // no pool: this thread does it
++        bl_band_cb(NULL, &band[0], NULL);
++        for (int i = 1; i < used; i++)
++            if (work[i]) { WaitForThreadpoolWorkCallbacks(work[i], FALSE); CloseThreadpoolWork(work[i]); }
++        return;
++    }
++#endif
++    bl_rows(bl, lin, pitch, row_bytes, rows, slices, th, td, to_linear, 0, rows);
++}
++
++static void bl_rows(uint8_t *bl, uint8_t *lin, size_t pitch, uint32_t row_bytes, uint32_t rows, uint32_t slices,
++                    unsigned th, unsigned td, int to_linear, uint32_t y0, uint32_t y1) {
+     static const uint32_t seg[4] = {0, 32, 256, 288};
+     uint64_t block = 512ull << th << td;
+     for (uint32_t z = 0; z < slices; z++)
+-        for (uint32_t y = 0; y < rows; y++) {
++        for (uint32_t y = y0; y < y1; y++) {
+             uint8_t *row = lin + ((size_t)z * rows + y) * pitch, *g = bl + nvn_bl_offset(0, y, z, row_bytes, rows, th, td);
+             uint32_t x = 0;
+             if (to_linear)

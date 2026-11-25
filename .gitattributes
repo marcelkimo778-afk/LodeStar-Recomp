@@ -1,0 +1,3 @@
+# test fixtures are byte-exact (IPS patches, empty files): never convert line endings
+Engine/Tests/mods_fixture/** -text
+Engine/Tests/modbrowser_fixture/** -text

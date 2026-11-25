@@ -1,0 +1,13 @@
+#version 450
+// Luma pyramid: one output texel = the average of the input area it covers (4 bilinear taps).
+#include "fg_common.glsl"
+void main() {
+    ivec2 q = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(q, pc.size))) return;
+    vec2 uv = (vec2(q) + 0.5) / vec2(pc.size), o = 0.25 / vec2(pc.size);
+    vec4 a = textureLod(s0, uv + vec2(-o.x, -o.y), 0.0) + textureLod(s0, uv + vec2(o.x, -o.y), 0.0)
+           + textureLod(s0, uv + vec2(-o.x, o.y), 0.0) + textureLod(s0, uv + vec2(o.x, o.y), 0.0);
+    a *= 0.25;
+    float l = pc.radius > 0.5 ? luma(a.rgb) : a.r;
+    imageStore(dst, q, vec4(l, 0.0, 0.0, 1.0));
+}

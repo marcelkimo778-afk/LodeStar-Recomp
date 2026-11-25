@@ -1,0 +1,42 @@
+--- generated/vk/vk_dump.c
++++ arceus/vk/vk_dump.c
+@@ -528,7 +528,13 @@ static void flush_luts(VkExec *ex, int n) {
+                  (int)l->format, fmt_name(l->format, fn), bf ? "_blocks" : "");
+         const char *why = bf ? copy_region(ex, l->image, bf, VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 0,
+                                            (VkExtent3D){l->w, l->h, l->d}, (l->w + 3) / 4, (l->h + 3) / 4, l->d, name)
+-                             : copy_out(ex, l->image, l->format, VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, l->w, l->h, l->d, name);
++                             : copy_out(ex, l->image, l->format,
++                                        // [arceus] a sampled depth texture (the water's 480x270 copy): its depth aspect
++                                        l->format == VK_FORMAT_D32_SFLOAT_S8_UINT || l->format == VK_FORMAT_D32_SFLOAT ||
++                                                l->format == VK_FORMAT_D24_UNORM_S8_UINT || l->format == VK_FORMAT_D16_UNORM ||
++                                                l->format == VK_FORMAT_X8_D24_UNORM_PACK32
++                                            ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
++                                        0, 0, l->w, l->h, l->d, name);
+         fprintf(passes_f, "  %s tex %d -> %s.png%s%s\n", l->is2d ? "2D" : "3D", l->id, name, why ? " skipped: " : "",
+                 why ? why : "");
+     }
+@@ TOTK_DUMP=trigger (arceus): state @@
+-static uint64_t dump_frame, log_from;   // log_from: TOTK_DUMP_LOG, first frame logged to passes.txt without images
++static int dump_trigger;   // [arceus] TOTK_DUMP=trigger
++static uint64_t dump_frame, log_from;   // log_from: TOTK_DUMP_LOG, first frame logged to passes.txt without images
+@@ TOTK_DUMP=trigger (arceus): init @@
+     const char *e = cfg_get("TOTK_DUMP");
+-    if (!e || !*e || !(dump_frame = strtoull(e, NULL, 10))) return;
++    // [arceus] TOTK_DUMP=trigger: armed, and the frame 3 presents after a file "dump_now" appears in the working
++    // directory is dumped (vk_dump_present checks twice a second; the file is removed) - for scenes that do not come
++    // at a fixed frame (battles), with a watcher that creates the file
++    if (e && !strcmp(e, "trigger")) dump_frame = UINT64_MAX, dump_trigger = 1;
++    else if (!e || !*e || !(dump_frame = strtoull(e, NULL, 10))) return;
+@@ TOTK_DUMP=trigger (arceus): present @@
+ void vk_dump_present(uint64_t frame) {
++    if (dump_trigger && dump_frame == UINT64_MAX && frame % 30 == 0) {   // [arceus] TOTK_DUMP=trigger
++        FILE *t = fopen("dump_now", "rb");
++        if (t) {
++            fclose(t);
++            remove("dump_now");
++            dump_frame = frame + 3;
++            rt_log("vk_dump: trigger file seen at frame %llu: dumping frame %llu", (unsigned long long)frame,
++                   (unsigned long long)dump_frame);
++        }
++    }
+     if (frame != dump_frame) return;
