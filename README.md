@@ -17,9 +17,11 @@
 
 ## Getting started
 
+New here? The illustrated walkthrough is in **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
+
 1. **Install LodeStar** - download the installer from [Releases](../../releases), or clone this repository.
 2. **Dump your game** from your own Switch, as an already-extracted **ExeFS** and **RomFS** (for example with
-   nxdumptool: "Dump ExeFS" and "Dump RomFS" of the base game, version 1.0.0). LodeStar never decrypts game packages.
+   nxdumptool: "Dump ExeFS" and "Dump RomFS" of the base game, version 1.0.0).
 3. **Start LodeStar**, click **Import game files** and pick the folder with your `exefs` and `romfs`.
    The launcher checks the files and the game version.
 4. Click **Build** once (it translates and compiles the game on your PC: 10-30 minutes depending on the CPU), then
@@ -53,12 +55,6 @@ Default keyboard: A = Enter/Space/K, B = Backspace/L, X = I, Y = J, L = Q, R = E
 | F4 | mods menu |
 | F9 | record an input route (for benchmarks) |
 | F11 | fullscreen |
-
-## Known problems
-
-- Wild Pokémon still appear only within about 40-50 m of the player, whatever the Simulation distance.
-- Simulation distance is processor work: high values lower the frame rate on most PCs.
-- A rare start failure ("guest page ... is occupied by host memory"): start again.
 
 ## How it works
 
