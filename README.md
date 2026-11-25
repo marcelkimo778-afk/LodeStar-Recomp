@@ -5,12 +5,7 @@
 <h1 align="center">LodeStar</h1>
 
 <p align="center">
-  A static recompiler that turns a Nintendo Switch game's ARM64 code into a native Windows program.<br>
-  No emulator, no interpreter: the game's code is translated to C ahead of time and compiled on your PC.
-</p>
-
-<p align="center">
-  <b>Supported game:</b> Pokémon Legends: Arceus, version 1.0.0 &nbsp;·&nbsp; <b>Platform:</b> Windows 10/11 x64
+  Pokémon Legends: Arceus (version 1.0.0) as a native Windows program, built from your own game dump.
 </p>
 
 ---
@@ -19,20 +14,6 @@
 > LodeStar only works with a copy of the game you own, dumped from your own Nintendo Switch.
 > This project is not affiliated with, endorsed or sponsored by Nintendo, Game Freak, Creatures or The Pokémon Company.
 > All trademarks belong to their owners. Do not open issues asking for game files or keys.
-
-## What you get
-
-- **High, steady frame rates**: 30, 60, 90, 120 or 240 fps with the world running at real-time speed, plus built-in
-  **frame generation** (2x to 10x, limited by your monitor). On a Ryzen 7 / RTX 5070 an open-field route runs at about
-  190 fps; limited to 4 CPU threads it still holds about 160.
-- **Sharper picture**: resolution scale up to 4x (4K and beyond), FSR 1 or NVIDIA DLAA, 16x texture filtering, larger
-  sun shadows, far tree and detail distances, colour presets.
-- **Recommended settings for your PC**: the launcher reads your processor, memory and graphics card and fills in
-  settings that suit them, with the extra work on the graphics card, the processor or both.
-- **Mods**: romfs/exefs/cheat mods in emulator and Atmosphere layouts, a mod browser (GameBanana, GitHub mod
-  collections, Nexus Mods) with safe installs and version checks, and an in-game mods menu (F4).
-- **Comfort**: controller and keyboard/mouse (rebindable, mouse camera), an in-game settings menu (F1), a performance
-  overlay (F10), save import/export and a save library.
 
 ## Getting started
 
@@ -87,9 +68,3 @@ stands in for the Switch's operating system (memory, threads, kernel calls, serv
 game's NVN graphics calls are translated to Vulkan, its shaders with the Ryujinx shader compiler.
 
 Details, build switches and tools: [docs/DEVELOPING.md](docs/DEVELOPING.md).
-
-## Credits
-
-LodeStar builds on open-source work, listed with their licences in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md):
-the graphics layer of [totk-pc-recomp](https://github.com/valentderah/totk-pc-recomp) and the projects it builds on, the Ryujinx shader
-translator, Dear ImGui, Opus and AMD FidelityFX FSR.
