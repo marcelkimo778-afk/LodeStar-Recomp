@@ -39,6 +39,7 @@ import controls  # noqa: E402
 import controls_ui  # noqa: E402
 import mods_cfg  # noqa: E402
 import pc_advice  # noqa: E402
+import updater  # noqa: E402
 import mods_ui  # noqa: E402
 import shader_prep  # noqa: E402
 import ui_kit as ui  # noqa: E402
@@ -471,7 +472,7 @@ def _load_settings() -> dict:
                 # extra diagnostics
                 "ipc_log": False, "romfs_log": False, "oq_force": False, "peek": "", "watch": "",
                 # launcher behaviour
-                "animations": True, "autoscroll": True, "confirm_recompile": True,
+                "animations": True, "autoscroll": True, "confirm_recompile": True, "check_updates": True,
                 "max_log_lines": "20000", "keep_logs": "60"}
     path = _project_root() / SETTINGS_FILE
     try:
@@ -904,7 +905,7 @@ class LauncherApp:
         self.task: Task | None = None
         self.progress: BuildProgress | None = None
         self.all_lines: list[tuple[str, str]] = []
-        self.pipeline: list = []            # remaining Update & Play steps
+        self.pipeline: list = []            # remaining steps of a chain (after an update, shader preparation)
         self.shader_progress = None         # Build Shaders progress (shader_prep.ShaderPrepProgress)
         self.gpu_key = None                 # sw_app.exe --gpu-info, read once in the background
         self._gpu_probe_started = False
@@ -941,6 +942,9 @@ class LauncherApp:
         self._show_window()
         self.root.after(100, self.poll_output)
         self.root.after(33, self._animate)
+        self.root.after(800, self._after_update)                 # an update just applied: its rebuild
+        if self.settings.get("check_updates", True):
+            self.root.after(1500, self._check_update)             # every start, in the background
 
     # -- animation ---------------------------------------------------------
     @staticmethod
@@ -1194,7 +1198,7 @@ class LauncherApp:
             self.bar.configure(value=self._bar_value)
 
     def _bind_keys(self) -> None:
-        self.root.bind("<F5>", lambda _e: self.task is None and self.on_update_play())
+        self.root.bind("<F5>", lambda _e: self.task is None and self.update_info and self.on_update())
         self.root.bind("<F6>", lambda _e: self.task is None and self.exe.is_file() and self.on_play())
         self.root.bind("<Control-b>", lambda _e: self.task is None and self.on_build())
         self.root.bind("<Escape>", self._on_escape)
@@ -1359,7 +1363,7 @@ class LauncherApp:
         titles = tk.Frame(top, bg=c["bg"])
         titles.pack(side="left")
         tk.Label(titles, text="LodeStar", font=ui.F(24, 700), bg=c["bg"], fg=c["text"]).pack(anchor="w")
-        tk.Label(titles, text="Static recompiler  ·  native PC build of your own game dump", font=ui.F(10), bg=c["bg"],
+        tk.Label(titles, text="Native PC build of Pokémon Legends: Arceus  ·  by Kimo", font=ui.F(10), bg=c["bg"],
                  fg=c["muted"]).pack(anchor="w")
         self.status_var = tk.StringVar(value="Ready")
         status_col = tk.Frame(top, bg=c["bg"])                 # the status pill, and Uninstall (red) right under it
@@ -1392,8 +1396,9 @@ class LauncherApp:
         btns.pack(side="right")
         self.btn_play = ui.PillButton(btns, "Play", self.on_play, kind="primary", size="lg")
         self.btn_play.pack(side="left")
-        self.btn_update_play = ui.PillButton(btns, "Update & Play", self.on_update_play, kind="secondary", size="lg")
-        self.btn_update_play.pack(side="left", padx=(P["sm"], 0))
+        # shown only when GitHub has a newer release (updater.py): "Update launcher" / "Update & rebuild" / ...
+        self.btn_update = ui.PillButton(btns, "Update", self.on_update, kind="secondary", size="lg")
+        self.update_info: dict | None = None
         self.btn_stop = ui.PillButton(btns, "Stop", self.on_stop, kind="danger", size="lg")
         self.btn_stop.pack(side="left", padx=(P["sm"], 0))
         self.btn_stop.configure(state="disabled")
@@ -1403,7 +1408,7 @@ class LauncherApp:
         foot.pack(fill="x")
         self.detail_var = tk.StringVar()
         self._label(foot, self.detail_var, size=9, muted=True).pack(side="left")
-        self._label(foot, text="F5 Update & Play  ·  F6 Play  ·  Esc Stop  ·  F11 Fullscreen  ·  Ctrl+1…4 tabs", size=9,
+        self._label(foot, text="F5 Update (when there is one)  ·  F6 Play  ·  Esc Stop  ·  F11 Fullscreen  ·  Ctrl+1…4 tabs", size=9,
                     muted=True).pack(side="right")
 
         # tabs
@@ -1684,6 +1689,7 @@ class LauncherApp:
             "animations": tk.BooleanVar(value=bool(st.get("animations", True))),
             "autoscroll": tk.BooleanVar(value=bool(st.get("autoscroll", True))),
             "confirm_recompile": tk.BooleanVar(value=bool(st.get("confirm_recompile", True))),
+            "check_updates": tk.BooleanVar(value=bool(st.get("check_updates", True))),
             "max_log_lines": tk.StringVar(value=str(st.get("max_log_lines", "20000"))),
             "keep_logs": tk.StringVar(value=str(st.get("keep_logs", "60"))),
         }
@@ -1958,6 +1964,8 @@ class LauncherApp:
         check(l, "Animations", local["animations"], "Eased progress bar, pulsing boot stage, header shimmer.")
         check(l, "Auto-scroll the log", local["autoscroll"])
         check(l, "Ask before a full recompile", local["confirm_recompile"])
+        check(l, "Check for updates at start", local["check_updates"],
+              "Asks GitHub for a newer LodeStar release each time the launcher starts (nothing is sent but the request).")
         row(l, "Log lines kept on screen:", lambda p: ttk.Entry(p, textvariable=local["max_log_lines"], width=8))
         row(l, "Log files kept (older ones move to logs/old):",
             lambda p: ttk.Entry(p, textvariable=local["keep_logs"], width=6))
@@ -2473,7 +2481,7 @@ class LauncherApp:
         elif not gen_ok:
             hint = "Recompile the game code (Build tab)."
         elif not exe_ok or stale:
-            hint = "Build the game (Build tab) - or Update & Play."
+            hint = "Build the game (Build tab)."
         else:
             hint = "Ready to play."
         self.hint_var.set(hint)
@@ -2503,7 +2511,7 @@ class LauncherApp:
             b.configure(state=state)
         self.btn_shaders.configure(state="disabled" if busy or not self.exe.is_file() else "normal")
         self.btn_play.configure(state="disabled" if busy or not self.exe.is_file() else "normal")
-        self.btn_update_play.configure(state=state)
+        self.btn_update.configure(state=state)
         self.btn_stop.configure(state="normal" if busy else "disabled")
 
     def _store_settings(self) -> None:
@@ -2645,13 +2653,13 @@ class LauncherApp:
             if errs:
                 self.detail_var.set("First error: " + errs[0][:160])
         self.refresh_status()
-        # Update & Play: continue with the next step only after a clean finish
+        # a chain of steps (after an update, shader preparation): the next one only after a clean finish
         if self.pipeline:
             if task.returncode == 0 and not task.stopped:
                 step = self.pipeline.pop(0)
                 self.root.after(300, step)
             else:
-                self.log("[launcher] Update & Play stopped (previous step did not succeed)", "system")
+                self.log("[launcher] the remaining steps stopped (the previous one did not succeed)", "system")
                 self.pipeline.clear()
 
     def poll_output(self) -> None:
@@ -2714,17 +2722,78 @@ class LauncherApp:
         self._start("build", [sys.executable, "-u", str(self.work / "build.py")], env_extra=env,
                     title="Building the game")
 
-    def on_update_play(self) -> None:
-        """Recompile (only if the translator changed) -> build -> play."""
+    # -- updates (updater.py: GitHub releases of LodeStar) ---------------------------------------------------------
+    def _check_update(self) -> None:
+        def work():
+            info = updater.check()
+            self.root.after(0, lambda: self._show_update(info))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_update(self, info: dict) -> None:
+        if not info.get("available"):
+            if info.get("error"):
+                self.log(f"[update] no update check: {info['error']}", "system")
+            return
+        self.update_info = info
+        self.btn_update.configure(text=updater.BUTTON[info["kind"]])
+        self.btn_update.pack(side="left", padx=(ui.SPACE["sm"], 0), before=self.btn_stop)
+        what = {"launcher": "only the launcher changed - no rebuild",
+                "rebuild": "the game runtime changed - the game is rebuilt (a few minutes)",
+                "recompile": "the recompiler changed - the game's code is translated again and rebuilt"}[info["kind"]]
+        self.log(f"[update] LodeStar {info['version']} is available ({what})", "system")
+        self.status_lbl.set(f"Update {info['version']}", "accent")
+
+    def on_update(self) -> None:
+        info = self.update_info
+        if not info or self.task:
+            return
+        what = {"launcher": "Only the launcher changes: nothing is rebuilt.",
+                "rebuild": "The game runtime changed: after the update the game is rebuilt (a few minutes).",
+                "recompile": "The recompiler changed: after the update the game's code is translated again and "
+                             "rebuilt (10-30 minutes)."}[info["kind"]]
+        notes = (info.get("notes") or "").strip()
+        if not messagebox.askyesno(f"Update to {info['version']}",
+                                   f"LodeStar {info['current']} -> {info['version']}\n\n{what}\n\nYour game files, mods, "
+                                   "settings, saves and built game are kept. The launcher closes and starts again."
+                                   + (f"\n\nWhat's new:\n{notes[:600]}" if notes else "")):
+            return
+        self.btn_update.configure(state="disabled")
+        self.task_var.set("Downloading the update...")
+
+        def work():
+            try:
+                z = updater.download(info, lambda d, t: self.root.after(0, lambda: self.task_var.set(
+                    f"Downloading the update... {d / 2**20:.1f} of {t / 2**20:.1f} MB" if t else "Downloading the update...")))
+                self.root.after(0, lambda: self._apply_update(z, info))
+            except (OSError, ValueError) as e:
+                self.root.after(0, lambda: (messagebox.showerror("Update", f"The update could not be downloaded: {e}"),
+                                            self.btn_update.configure(state="normal"), self.task_var.set("Nothing running")))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _apply_update(self, zip_path, info: dict) -> None:
+        self._store_settings()
+        updater.start_apply(zip_path, info, self.root_dir)
+        self.root.destroy()
+
+    def _after_update(self) -> None:
+        """Settings/pending_update.json (written by the update helper): the build the update needs, once."""
+        p = self.root_dir / "Settings" / "pending_update.json"
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+            p.unlink()
+        except (OSError, ValueError):
+            return
+        kind = d.get("kind", "launcher")
+        self.log(f"[update] updated to {d.get('version')} ({d.get('files', '?')} files)", "system")
+        if kind == "launcher" or not game_files_check(self.root_dir)[0]:
+            return                                                # nothing to build, or no game files to build from
         steps = []
-        if translator_newer_than(self.work / "gen" / "program.json",
-                                 self.root_dir / SYSTEM_DIR / "Engine" / "Source" / "swrecomp"):
+        if kind == "recompile":
             steps.append(self._recompile_now)
-        if not self.xlate_dll.is_file():
-            steps.append(self.on_build_xlate)
-        steps += [self.on_build, self.on_play]
+        steps.append(self.on_build_xlate)                         # the translator may have changed too
+        steps.append(self.on_build)
         self.pipeline = steps[1:]
-        self.log(f"[launcher] Update & Play: {len(steps)} step(s)", "system")
+        self.log(f"[update] rebuilding the game after the update ({len(steps)} step(s))", "system")
         steps[0]()
 
     def on_clean_build(self) -> None:
