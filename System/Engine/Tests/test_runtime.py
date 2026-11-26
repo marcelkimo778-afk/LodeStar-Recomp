@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent  # Project root
-EXE = ROOT / "build_work" / "out" / ("Pokemon Arceus.exe" if sys.platform == "win32" else "sw_app")
+EXE = ROOT / "build_work" / "out" / ("LodeStar Game.exe" if sys.platform == "win32" else "sw_app")
 
 
 @unittest.skipUnless(EXE.is_file(), "standalone application not built")

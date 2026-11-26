@@ -77,6 +77,7 @@ typedef struct {
 static GThread g_t[MAX_THREADS];
 static volatile int g_t_hi = 1;       /* one past the highest slot ever used: the slots above are T_FREE, so scans stop here */
 static SW_TLS int g_cur;               /* running thread index (per host thread) */
+static SW_TLS int g_guest;             /* 1 on a host thread that runs guest threads (g_cur means something) */
 
 /* ---- SW_MULTICORE: guest threads on host threads, one kernel lock ---- */
 static int g_mc;
@@ -287,7 +288,9 @@ int kern_core_away(void)
 #if defined(_WIN32)
     static int nvn_locked = -1;   /* SW_NVN_LOCK=1: graphics keep the kernel lock, so keep the core too (no lock-order cycle) */
     if (nvn_locked < 0) { const char *e = getenv("SW_NVN_LOCK"); nvn_locked = e && *e == '1'; }
-    if (nvn_locked || !g_mc || !g_inited || !g_t[g_cur].cpu || g_t[g_cur].core_cur < 0) return 0;
+    /* a host thread of the graphics code (shader prewarm workers, translators) has g_cur 0 by default: giving up
+     * thread 0's core from there made 16 prewarm threads fight over the main thread's core (boot hang) */
+    if (nvn_locked || !g_guest || !g_mc || !g_inited || !g_t[g_cur].cpu || g_t[g_cur].core_cur < 0) return 0;
     int d = klock_drop();                     /* normally 0: NVN procs run without it */
     klock_take(1);
     core_release(g_cur);
@@ -422,6 +425,7 @@ void sw_threads_init(SwCpu *main_cpu)
 #endif
     strcpy(g_t[0].name, "main");
     g_cur = 0;
+    g_guest = 1;
     g_t[0].core = 0;
     g_t[0].prio = 44;
     g_t[0].core_cur = -1;
@@ -943,6 +947,7 @@ static DWORD WINAPI host_main(LPVOID param)
     int i = (int)(intptr_t)param;
     GThread *t = &g_t[i];
     g_cur = i;
+    g_guest = 1;
     host_spread(i);
     t->cpu->x[0] = t->arg;
     t->cpu->x[30] = 0;

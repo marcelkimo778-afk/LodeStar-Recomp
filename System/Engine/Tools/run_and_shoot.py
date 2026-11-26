@@ -56,7 +56,7 @@ def main() -> int:
 
     log_path = OUT / "logs" / f"{datetime.now():%Y%m%d_%H%M%S}_shoot.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen([str(OUT / "Pokemon Arceus.exe"), "--real-start", "--max-dispatch", "0"], cwd=OUT,
+    proc = subprocess.Popen([str(OUT / "LodeStar Game.exe"), "--real-start", "--max-dispatch", "0"], cwd=OUT,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                             errors="replace")
     presents = [0]

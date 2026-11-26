@@ -77,9 +77,9 @@ class LoaderTests(unittest.TestCase):
 
     def test_relocations_apply_cleanly(self):
         """Relocations apply without zero-value relocations (for non-weak symbols)."""
-        exe = ROOT / "build_work" / "out" / "Pokemon Arceus.exe"
+        exe = ROOT / "build_work" / "out" / "LodeStar Game.exe"
         if not exe.exists():
-            self.skipTest("Pokemon Arceus.exe not built yet")
+            self.skipTest("LodeStar Game.exe not built yet")
         
         result = subprocess.run([str(exe), "--reloc-audit", "--max-dispatch", "10000"],
                               capture_output=True, text=True, timeout=30)

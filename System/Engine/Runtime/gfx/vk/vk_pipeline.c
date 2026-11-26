@@ -2495,9 +2495,10 @@ void vk_pipeline_prewarm(void) {
     int nt = 0;
     for (int i = 0; i < cpus && i < 64 && queued; i++)
         if ((t[nt] = plat_thread_new(warm_builder, NULL, "pipe prewarm"))) nt++;
+    rt_log("vk_pipeline: prewarm: 0 of %u pipelines, 0 ms", queued);   // the launcher's progress bar
     if (!nt) warm_builder(NULL);
     for (int i = 0; i < nt; i++)
-        while (!plat_thread_join_ns(t[i], 2000000000u))
+        while (!plat_thread_join_ns(t[i], 500000000u))
             rt_log("vk_pipeline: prewarm: %u of %u pipelines, %.0f ms", K.built + K.failed, queued, now_ms() - t1);
     plat_mutex_lock(&P.lock);
     while (K.left) plat_cond_wait(&done_cv, &P.lock);   // jobs a pool worker took

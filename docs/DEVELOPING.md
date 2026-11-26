@@ -15,7 +15,7 @@ Players do not need any of this: the launcher (`LodeStar.exe`) runs the same ste
     #   SW_LTO=thin                ThinLTO over the chunks (experimental: crashed once in testing, off by default)
 
     # 3. Run (from build_work/out: the exe loads images/*.bin next to itself)
-    cd build_work/out && "./Pokemon Arceus.exe" --real-start --max-dispatch 0
+    cd build_work/out && "./LodeStar Game.exe" --real-start --max-dispatch 0
 
 The game code must be version 1.0.0 (build id `7FCAD279539DE183...`): the frame-rate, distance and other hooks are
 made for it. The launcher's **Import game files** checks the version.

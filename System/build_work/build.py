@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile build_work/gen + Engine/Runtime into System/build_work/out/Pokemon Arceus.exe.
+"""Compile build_work/gen + Engine/Runtime into System/build_work/out/LodeStar Game.exe.
 
 Called by the launcher.  Incremental: only sources newer than their object (or
 whose headers changed) are recompiled.  Objects are compiled into a temp dir
@@ -142,7 +142,7 @@ def main() -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     msvc = tool.name == "msvc"
-    exe = OUT_DIR / ("Pokemon Arceus.exe" if msvc else "sw_app")   # the game: its own icon (res/game.ico)
+    exe = OUT_DIR / ("LodeStar Game.exe" if msvc else "sw_app")   # the game: its own icon (res/game.ico)
 
     print(f"Toolchain: {tool.name} ({tool.compiler})")
     print(f"Gen dir:   {GEN_DIR}")

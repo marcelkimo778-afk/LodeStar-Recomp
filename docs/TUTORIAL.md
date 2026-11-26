@@ -29,7 +29,7 @@ What LodeStar does with your dump, once, on your PC:
 ```mermaid
 flowchart LR
     X["exefs<br/>(the game's ARM64 code)"] -->|recompiler| Y["C code<br/>~225,000 functions"]
-    Y -->|clang| Z["Pokemon Arceus.exe<br/>native Windows program"]
+    Y -->|clang| Z["LodeStar Game.exe<br/>native Windows program"]
     R["romfs<br/>(the game's data)"] -->|read while playing| Z
 ```
 

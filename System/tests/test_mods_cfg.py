@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "launcher"))
 import mods_cfg  # noqa: E402
 
 FIXTURE = ROOT / "Engine" / "Tests" / "mods_fixture"
-EXE = ROOT / "build_work" / "out" / "Pokemon Arceus.exe"
+EXE = ROOT / "build_work" / "out" / "LodeStar Game.exe"
 
 
 def test_load_defaults_and_comments(tmp_path):
@@ -49,7 +49,7 @@ def test_rows_order_and_config_roundtrip(tmp_path):
     assert mods_cfg.game_env(tmp_path / "nothing") == {}
 
 
-@pytest.mark.skipif(not EXE.is_file(), reason="Pokemon Arceus.exe not built")
+@pytest.mark.skipif(not EXE.is_file(), reason="LodeStar Game.exe not built")
 def test_list_mods_on_fixture(tmp_path):
     cfg = tmp_path / "mods.json"
     shutil.copyfile(FIXTURE / "mods.json", cfg)

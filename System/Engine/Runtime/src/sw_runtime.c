@@ -4551,7 +4551,7 @@ int main(int argc, char **argv)
     {
         char exe_path[2048];
 #if defined(_WIN32)
-        if (!GetModuleFileNameA(NULL, exe_path, sizeof(exe_path)))   /* the exe's own name (Pokemon Arceus.exe) */
+        if (!GetModuleFileNameA(NULL, exe_path, sizeof(exe_path)))   /* the exe's own name (LodeStar Game.exe) */
 #endif
             snprintf(exe_path, sizeof(exe_path), "%s/sw_app.exe", g_base_dir);
         struct stat st;

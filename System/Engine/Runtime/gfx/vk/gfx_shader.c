@@ -1735,7 +1735,10 @@ void gfx_shader_prewarm(const uint8_t (*iids)[32], size_t n, const GfxShader **o
     uint8_t (*sorted)[32] = n ? malloc(n * 32) : NULL;
     if (sorted) memcpy(sorted, iids, n * 32), qsort(sorted, n, 32, iid_cmp);
     Warm w = {.named = iids, .n_named = n, .out = out};
-    w.n_other = other_inputs(sorted, sorted ? n : 0, &w.other);
+    // The other stored inputs (~10,000: every shader ever met, not only the recorded pipelines') made the boot wait
+    // for a translation of each after a translator change. They are translated on demand in play as without the
+    // prewarm; TOTK_PREWARM_ALL=1 takes them at boot again.
+    if (cfg_bool("TOTK_PREWARM_ALL")) w.n_other = other_inputs(sorted, sorted ? n : 0, &w.other);
     free(sorted);
     size_t total = w.n_named + w.n_other;
     threads = threads < 1 ? 1 : threads > 64 ? 64 : threads;
@@ -1745,9 +1748,10 @@ void gfx_shader_prewarm(const uint8_t (*iids)[32], size_t n, const GfxShader **o
     int k = 0;
     for (int i = 0; i < threads; i++)
         if ((t[k] = plat_thread_new(warm_worker, &w, "shader prewarm"))) k++;
+    rt_log("gfx_shader: prewarm: 0 of %zu shaders, 0 translated, 0 ms", total);   // the launcher's progress bar
     if (!k) warm_worker(&w);
     for (int m = 0; m < k; m++)
-        while (!plat_thread_join_ns(t[m], 2000000000u))
+        while (!plat_thread_join_ns(t[m], 500000000u))
             rt_log("gfx_shader: prewarm: %lld of %zu shaders, %llu translated, %.0f ms", (long long)w.done, total,
                    (unsigned long long)((uint64_t)n_xlated - xl0), (double)plat_now_ms() - t0);
     svc_set_limit(svc_runtime_limit());

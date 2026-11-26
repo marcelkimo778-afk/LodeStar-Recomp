@@ -5,7 +5,7 @@ One window that walks through the pipeline in order and says what to do next:
 
     1. Game files   Game/exefs (+ romfs) present?
     2. Recompile    ARM64 -> C           (System/build_work/gen, ~10 min)
-    3. Build        C -> Pokemon Arceus.exe (System/build_work/out, incremental)
+    3. Build        C -> LodeStar Game.exe (System/build_work/out, incremental)
     4. Play         run the game         (sw_app.exe --real-start)
 
 Every task streams into the log panel and is also saved under
@@ -56,7 +56,8 @@ def _project_root() -> Path:
 
 
 SYSTEM_DIR = "System"            # everything technical: Engine/, launcher/, build_work/, Build/, tests/
-GAME_EXE = "Pokemon Arceus.exe"  # the game (build_work/build.py writes it; its own icon, not the launcher's)
+LEGACY_GAME_EXE = "Pokemon" + " Arceus.exe"  # the name builds before 0.1.2 had
+GAME_EXE = "LodeStar Game.exe"  # the game (build_work/build.py writes it; its own icon, not the launcher's)
 
 
 CONFIG_FILE = "Settings/config.json"
@@ -565,7 +566,7 @@ class BuildProgress:
         if self.phase == "starting":
             return "Preparing..."
         if self.phase == "linking":
-            return "Linking Pokemon Arceus.exe (a few minutes)..."
+            return "Linking LodeStar Game.exe (a few minutes)..."
         if self.phase == "done":
             return "Build finished"
         text = f"Compiling {self.done:,} / {self.total:,} files"
@@ -900,6 +901,12 @@ class LauncherApp:
         self.work = self.root_dir / SYSTEM_DIR / "build_work"
         self.out_dir = self.work / "out"
         self.exe = self.out_dir / (GAME_EXE if sys.platform == "win32" else "sw_app")
+        legacy = self.out_dir / LEGACY_GAME_EXE           # builds before 0.1.2: renamed once, no rebuild needed
+        if sys.platform == "win32" and legacy.is_file() and not self.exe.exists():
+            try:
+                legacy.replace(self.exe)
+            except OSError:
+                pass
         self.settings = _load_settings()
         self.queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self.task: Task | None = None
@@ -1514,7 +1521,7 @@ class LauncherApp:
         self.btn_recompile = ui.PillButton(f, "Recompile", self.on_recompile, kind="secondary", size="sm")
         self.btn_recompile.pack(side="left")
 
-        b = self._card(grid, "Build", "Compile the C code into the game (Pokemon Arceus.exe). Only changed files are rebuilt.")
+        b = self._card(grid, "Build", "Compile the C code into the game (LodeStar Game.exe). Only changed files are rebuilt.")
         place(b, 1, 0)
         self.exe_var = tk.StringVar()
         self._label(b, self.exe_var, size=10).pack(anchor="w")
@@ -2680,13 +2687,15 @@ class LauncherApp:
                     self.detail_var.set(self.recomp_progress.describe())
                 if self.task and self.task.name == "play" and self.tracker.feed(payload):
                     self._paint_stages()
+                if self.task and self.task.name == "play" and "prewarm: " in payload:
+                    self._show_prewarm(payload)
                 self.log(payload)
         except queue.Empty:
             pass
         if self.task and self.recomp_progress:
             if self._tick % 30 == 0:
                 self.detail_var.set(self.recomp_progress.describe())
-        elif self.task and not self.progress and not self.shader_progress:
+        elif self.task and not self.progress and not self.shader_progress and not getattr(self, "_prewarm_shown", False):
             self.detail_var.set(f"Running for {format_duration(time.time() - self.task.started)}")
         now = time.time()
         if now - self._last_mem > 2:
@@ -2696,6 +2705,30 @@ class LauncherApp:
             git = f"   ·   {self._git}" if self._git else ""
             self.footer_var.set(f"Project: {self.root_dir}{git}{ram}")
         self.root.after(100, self.poll_output)
+
+    _PREWARM_RE = re.compile(r"\[gfx\] (gfx_shader|vk_pipeline): prewarm: (\d+) of (\d+) (shaders|pipelines)")
+
+    def _show_prewarm(self, line: str) -> None:
+        """Boot prewarm (Pipeline prewarm option): its progress on the bar and in the status, until the game draws."""
+        m = self._PREWARM_RE.search(line)
+        if m:
+            done, total = int(m.group(2)), int(m.group(3))
+            what = "Preparing shaders" if m.group(4) == "shaders" else "Building pipelines"
+            if str(self.bar.cget("mode")) != "determinate":
+                self.bar.stop()
+                self.bar.configure(mode="determinate")
+            frac = done / total if total else 1.0
+            self._set_bar(frac * 1000)
+            text = f"{what}: {done:,} of {total:,} ({frac:.0%})"
+            self.detail_var.set(text)
+            self.set_status(text, "accent")
+            self._prewarm_shown = True
+        elif "pipeline prewarm took" in line or "vk_pipeline: prewarm: no pipeline keys" in line:
+            if getattr(self, "_prewarm_shown", False):
+                self._prewarm_shown = False
+                self._set_bar(1000)
+                self.set_status("Starting the game", "accent")
+                self.log("[launcher] shader prewarm done", "good")
 
     # -- button handlers -------------------------------------------------------------
     def on_recompile(self) -> None:
@@ -2842,7 +2875,7 @@ class LauncherApp:
                 except OSError as e:
                     self.log(f"DLAA: could not copy {src}: {e}")
             else:
-                self.log("DLAA: no nvngx_dlss.dll found on this PC (put one next to Pokemon Arceus.exe); DLAA stays off")
+                self.log("DLAA: no nvngx_dlss.dll found on this PC (put one next to LodeStar Game.exe); DLAA stays off")
         env.update(vsync_env(st.get("vsync", "On")))
         env.update(draw_distance_env(st.get("draw_distance", DRAW_DISTANCE_CHOICES[0])))
         env.update(detail_distance_env(st.get("detail_distance", DRAW_DISTANCE_CHOICES[0])))
@@ -2886,6 +2919,7 @@ class LauncherApp:
         args, env = self._run_args()
         self.result_var.set("Running...")
         self.tracker = BootTracker()
+        self._prewarm_shown = False
         self._start("play", [str(self.exe), "--real-start", *args], cwd=self.out_dir, env_extra=env,
                     title="Game running")
         self._paint_stages()

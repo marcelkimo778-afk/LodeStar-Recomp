@@ -24,3 +24,18 @@
 +            t.alpha_func = 0;
 +            pack_answers(rec + 68, &t);
 +        }
+@@ [arceus] 2026-11-26 boot prewarm: only the recorded pipelines' shaders (the ~10,000 others waited at boot) @@
+     Warm w = {.named = iids, .n_named = n, .out = out};
+-    w.n_other = other_inputs(sorted, sorted ? n : 0, &w.other);
++    // The other stored inputs (~10,000: every shader ever met, not only the recorded pipelines') made the boot wait
++    // for a translation of each after a translator change. They are translated on demand in play as without the
++    // prewarm; TOTK_PREWARM_ALL=1 takes them at boot again.
++    if (cfg_bool("TOTK_PREWARM_ALL")) w.n_other = other_inputs(sorted, sorted ? n : 0, &w.other);
+@@ [arceus] 2026-11-26 boot prewarm progress: a first line, then every 0.5 s (launcher progress bar) @@
+-    if (!k) warm_worker(&w);
+-    for (int m = 0; m < k; m++)
+-        while (!plat_thread_join_ns(t[m], 2000000000u))
++    rt_log("gfx_shader: prewarm: 0 of %zu shaders, 0 translated, 0 ms", total);   // the launcher's progress bar
++    if (!k) warm_worker(&w);
++    for (int m = 0; m < k; m++)
++        while (!plat_thread_join_ns(t[m], 500000000u))

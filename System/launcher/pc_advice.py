@@ -86,7 +86,7 @@ def _gpus() -> list[tuple[str, float]]:
 
 def detect(gpu_name: str | None = None) -> dict:
     """This PC: cpu (name), threads, ram_gb, gpu (name), vram_gb.  gpu_name: the Vulkan device the game uses
-    (Pokemon Arceus.exe --gpu-info), else the adapter with the most video memory."""
+    (LodeStar Game.exe --gpu-info), else the adapter with the most video memory."""
     cpu = _reg(r"HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString") or "unknown processor"
     gpus = _gpus()
     pick = None

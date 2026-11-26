@@ -15,3 +15,11 @@
  }
  static void keys_note(const VkPipeState *s) {
      if (!keys_rec_on() || !K.path[0]) return;
+@@ [arceus] 2026-11-26 pipeline prewarm progress: a first line, then every 0.5 s (launcher progress bar) @@
+-    if (!nt) warm_builder(NULL);
+-    for (int i = 0; i < nt; i++)
+-        while (!plat_thread_join_ns(t[i], 2000000000u))
++    rt_log("vk_pipeline: prewarm: 0 of %u pipelines, 0 ms", queued);   // the launcher's progress bar
++    if (!nt) warm_builder(NULL);
++    for (int i = 0; i < nt; i++)
++        while (!plat_thread_join_ns(t[i], 500000000u))

@@ -16,7 +16,7 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parents[2] / "build_work" / "out"
 name, secs = sys.argv[1], float(sys.argv[2])
 save = "newgame_20261107_beach"
-exe = OUT / "Pokemon Arceus.exe"
+exe = OUT / "LodeStar Game.exe"
 env = dict(os.environ)
 env.update({"SW_AUTO_A": "20,2.5", "SW_SWKBD_ANSWER": "Test", "SW_INPUT": "script", "SW_SHOT_EVERY": "0",
             # an off-screen window that never takes the focus (gfx_window_win.c): a test does not cover the
