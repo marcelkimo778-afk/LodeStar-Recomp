@@ -64,3 +64,17 @@ stands in for the Switch's operating system (memory, threads, kernel calls, serv
 game's NVN graphics calls are translated to Vulkan, its shaders with the Ryujinx shader compiler.
 
 Details, build switches and tools: [docs/DEVELOPING.md](docs/DEVELOPING.md).
+
+## Help, bugs and ideas
+
+- **Bugs:** open an [issue](../../issues/new/choose) (the form asks for what is needed).
+- **Questions, setup help, screenshots, benchmarks:** [Discussions](../../discussions).
+
+## Rules
+
+- LodeStar is free and always will be: no donations, no paid builds, no ads.
+- It contains no game code, game data or keys, and it never decrypts anything: you give it a dump you made yourself,
+  and the game is built on your own PC. Nothing built from the game is ever shared from here.
+- Requests or links for game files, dumps or keys are removed, and the people who post them are blocked.
+- Rights holders: if you have a concern about this project, open an issue or contact the owner through GitHub, and it
+  will be answered promptly.

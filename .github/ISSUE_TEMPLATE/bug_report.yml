@@ -1,0 +1,55 @@
+name: Bug report
+description: Something is broken - a crash, a graphics problem, a freeze, wrong sound.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Issues asking for game files, keys, dumps or download links are closed and locked.**
+        LodeStar only works with a game you own and dumped yourself.
+  - type: input
+    id: version
+    attributes:
+      label: LodeStar version
+      description: Shown in the launcher's title bar.
+      placeholder: "0.1.2"
+    validations:
+      required: true
+  - type: input
+    id: pc
+    attributes:
+      label: PC
+      description: CPU, graphics card, RAM, Windows version.
+      placeholder: "Ryzen 7 5800X, RTX 3070, 32 GB, Windows 11"
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: When does it happen?
+      options:
+        - Installing / importing the dump
+        - Building
+        - Starting the game
+        - In the game
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and where?
+      description: What you did, what you expected, what you got. For in-game problems, the place in the game helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Drag in the build log or debug.log and a screenshot if you have one.
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Confirm
+      options:
+        - label: I use my own dump of the base game, version 1.0.0, from my own Switch.
+          required: true

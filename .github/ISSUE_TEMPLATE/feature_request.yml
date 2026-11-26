@@ -1,0 +1,11 @@
+name: Idea
+description: A setting, an improvement or a feature you would like.
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What should LodeStar do, and why would it help?
+    validations:
+      required: true
